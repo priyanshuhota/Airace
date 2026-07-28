@@ -1,0 +1,37 @@
+# -----------------------------------------------------------------------------
+# Frontend Deployment
+#
+# Deploys the React frontend application.
+# Kubernetes pulls the Docker image from Amazon ECR.
+# -----------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: airace-frontend
+  labels:
+    app: airace-frontend
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: airace-frontend
+
+  template:
+    metadata:
+      labels:
+        app: airace-frontend
+
+    spec:
+      containers:
+        - name: airace-frontend
+
+          image: ${FRONTEND_IMAGE}
+
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 3000
