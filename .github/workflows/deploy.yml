@@ -178,11 +178,21 @@ jobs:
 
       - name: Wait for Backend
         run: |
-          kubectl rollout status deployment/airace-backend
+          kubectl rollout status deployment/airace-backend --timeout=180s
+
+      - name: Debug Backend if Rollout Fails
+        if: failure()
+        run: |
+          kubectl get deployments
+          kubectl get pods -o wide
+          kubectl describe deployment airace-backend || true
+          kubectl describe pods -l app=airace-backend || true
+          kubectl logs -l app=airace-backend --tail=200 || true
+          kubectl logs -l app=airace-backend --previous --tail=200 || true
 
       - name: Wait for Frontend
         run: |
-          kubectl rollout status deployment/airace-frontend
+          kubectl rollout status deployment/airace-frontend --timeout=180s
 
       # ----------------------------------------------------
       # Verify Pods
