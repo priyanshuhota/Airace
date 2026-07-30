@@ -493,6 +493,73 @@ function App() {
                     </div>
                   </div>
 
+                  {predictivePrediction ? (
+                    <div className="summary-box" style={{ borderColor: 'rgba(167, 139, 250, 0.18)', marginBottom: '4px' }}>
+                      <h4 style={{ color: 'var(--violet)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        📈 Predictive Maintenance Intelligence
+                      </h4>
+
+                      <div className="status-banner" style={{ marginTop: '10px', marginBottom: '12px' }}>
+                        <span className={`status-badge ${getRiskBadgeClass(predictivePrediction.risk_band)}`}>
+                          <span className="badge-dot" />
+                          {predictivePrediction.risk_band} RISK
+                        </span>
+                        <span className={`status-badge ${predictivePrediction.predicted_failure_label ? 'critical' : 'ok'}`}>
+                          <span className="badge-dot" />
+                          {predictivePrediction.predicted_failure_label
+                            ? 'FAILURE LIKELY WITHIN HORIZON'
+                            : 'NO FAILURE PREDICTED'}
+                        </span>
+                      </div>
+
+                      <div className="info-row">
+                        <div className="info-card">
+                          <span className="info-label">Health Score</span>
+                          <span className="info-value" style={{ color: 'var(--teal)' }}>
+                            {predictivePrediction.engine_health_score != null
+                              ? `${predictivePrediction.engine_health_score}%`
+                              : 'N/A'}
+                          </span>
+                          <span className="info-sub">ML-derived aircraft health estimate</span>
+                        </div>
+
+                        <div className="info-card">
+                          <span className="info-label">Failure Probability</span>
+                          <span className="info-value" style={{ color: 'var(--red)' }}>
+                            {predictivePrediction.failure_probability_next_n_flights != null
+                              ? `${(predictivePrediction.failure_probability_next_n_flights * 100).toFixed(1)}%`
+                              : 'N/A'}
+                          </span>
+                          <span className="info-sub">Predicted in next 20 flights</span>
+                        </div>
+
+                        <div className="info-card">
+                          <span className="info-label">Predicted RUL</span>
+                          <span className="info-value" style={{ color: 'var(--sky)' }}>
+                            {predictivePrediction.predicted_rul != null
+                              ? `${predictivePrediction.predicted_rul} cycles`
+                              : 'N/A'}
+                          </span>
+                          <span className="info-sub">Estimated remaining useful life</span>
+                        </div>
+
+                        <div className="info-card">
+                          <span className="info-label">Model Accuracy</span>
+                          <span className="info-value" style={{ color: 'var(--purple)' }}>
+                            {predictiveClassificationMetrics?.accuracy != null
+                              ? `${(predictiveClassificationMetrics.accuracy * 100).toFixed(1)}%`
+                              : 'N/A'}
+                          </span>
+                          <span className="info-sub">
+                            ROC-AUC: {predictiveClassificationMetrics?.roc_auc != null
+                              ? predictiveClassificationMetrics.roc_auc.toFixed(3)
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="gauge-grid">
                     {engineGauges.map((gauge) => {
                       const pct = Math.min(((gauge.value || 0) / gauge.max) * 100, 100);
