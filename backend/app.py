@@ -1,35 +1,72 @@
 """
 Simple FastAPI backend for the aircraft maintenance platform.
 
-This file exposes three lightweight endpoints:
+This file exposes lightweight endpoints for:
 1. Health check
 2. Aircraft analytics from an uploaded Excel file
 3. Maintenance prediction from analytics output
+4. Predictive maintenance ML output from an uploaded Excel file
+
+Production note:
+- Predictive maintenance models are loaded once at startup from saved artifacts.
+- Training should be performed offline using train_model.py.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import boto3
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
-from src.aircraft_maintenance.bedrock_maintenance_analyzer import AircraftMaintenanceAnalyzer
-from src.aircraft_maintenance.engineering_analytics import AircraftEngineeringAnalytics
+from src.aircraft_maintenance.bedrock_maintenance_analyzer import (
+    AircraftMaintenanceAnalyzer,
+)
+from src.aircraft_maintenance.engineering_analytics import (
+    AircraftEngineeringAnalytics,
+)
+from src.aircraft_maintenance.predictive_maintenance_ml import (
+    PredictiveMaintenanceModel,
+)
 
-# Load environment variables from .env file
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Load long-lived application resources once at startup.
+
+    FastAPI recommends initializing startup/shutdown resources with lifespan. [fastapi.tiangolo.com](https://fastapi.tiangolo.com/advanced/events/?utm_source=openai)
+    """
+    model_dir = os.getenv("MODEL_DIR", "./models")
+    predictor = PredictiveMaintenanceModel(model_dir=model_dir)
+
+    try:
+        predictor.load_artifacts()
+        app.state.predictor = predictor
+        logger.info("Predictive maintenance artifacts loaded successfully.")
+    except Exception as exc:
+        app.state.predictor = None
+        logger.exception("Failed to load predictive maintenance artifacts: %s", exc)
+
+    yield
 
 
 app = FastAPI(
     title="Aircraft Maintenance API",
-    version="1.0.0",
-    description="Simple API for aircraft engineering analytics and maintenance reporting",
+    version="1.1.0",
+    description="API for aircraft engineering analytics, predictive maintenance, and maintenance reporting",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -41,29 +78,29 @@ app.add_middleware(
 )
 
 
-
 @app.get("/")
 def root() -> dict[str, str]:
-    """Simple root endpoint so the frontend can confirm the backend is live."""
-    return {"status": "ok", "service": "aircraft-maintenance-api", "message": "Backend is running"}
+    return {
+        "status": "ok",
+        "service": "aircraft-maintenance-api",
+        "message": "Backend is running",
+    }
 
 
 @app.get("/testing/health")
-def health_check() -> dict[str, str]:
-    """Simple health check endpoint for smoke testing."""
-    return {"status": "ok", "service": "aircraft-maintenance-api"}
+def health_check() -> dict[str, Any]:
+    predictor_loaded = getattr(app.state, "predictor", None) is not None
+    return {
+        "status": "ok",
+        "service": "aircraft-maintenance-api",
+        "predictive_model_loaded": predictor_loaded,
+    }
 
 
 @app.post("/aircraft/analytics")
 async def aircraft_analytics(
     excel_file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    """
-    Generate engineering analytics from an uploaded Excel file.
-
-    This endpoint keeps the input simple by requiring only the Excel upload.
-    It uses the default sheet and the first available aircraft in the file.
-    """
     if not excel_file.filename:
         raise HTTPException(status_code=400, detail="Please upload an Excel file.")
 
@@ -99,11 +136,34 @@ async def aircraft_analytics(
             aircraft_id=first_aircraft,
             history_window=10,
         )
-        return {
+
+        response: dict[str, Any] = {
             "message": "Analytics generated successfully",
             "aircraft_id": first_aircraft,
             "summary": summary.to_dict(),
         }
+
+        predictor = getattr(app.state, "predictor", None)
+        if predictor is not None:
+            try:
+                predictive_prediction = predictor.predict_from_excel(
+                    excel_path=temp_path,
+                    sheet_name=0,
+                    aircraft_id=first_aircraft,
+                )
+                predictive_metrics = predictor.get_training_metrics()
+
+                response["predictive_maintenance"] = {
+                    "prediction": predictive_prediction.to_dict(),
+                    "model_evaluation": predictive_metrics,
+                }
+            except Exception as exc:
+                logger.exception("Predictive inference failed during analytics response: %s", exc)
+                response["predictive_maintenance"] = {
+                    "error": f"Predictive inference unavailable: {exc}"
+                }
+
+        return response
 
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -116,16 +176,73 @@ async def aircraft_analytics(
             os.remove(temp_path)
 
 
+@app.post("/aircraft/predictive-maintenance")
+async def predictive_maintenance(
+    excel_file: UploadFile = File(...),
+) -> dict[str, Any]:
+    if not excel_file.filename:
+        raise HTTPException(status_code=400, detail="Please upload an Excel file.")
+
+    if not excel_file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a valid Excel file (.xlsx or .xls).",
+        )
+
+    predictor = getattr(app.state, "predictor", None)
+    if predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Predictive maintenance model is not loaded on the server.",
+        )
+
+    temp_path: str | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=Path(excel_file.filename).suffix,
+        ) as temp_file:
+            content = await excel_file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        prediction = predictor.predict_from_excel(
+            excel_path=temp_path,
+            sheet_name=0,
+            aircraft_id=None,
+        )
+        evaluation = predictor.get_training_metrics()
+
+        return {
+            "message": "Predictive maintenance generated successfully",
+            "aircraft_id": prediction.aircraft_id,
+            "prediction": prediction.to_dict(),
+            "model_evaluation": evaluation,
+        }
+
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Predictive maintenance failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Predictive maintenance failed: {exc}",
+        ) from exc
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
 @app.post("/aircraft/maintenance-prediction")
 def maintenance_prediction(payload: dict[str, Any]) -> dict[str, Any]:
-    """
-    Generate a maintenance prediction report from the analytics output.
-
-    The request body can be the full response from the analytics endpoint,
-    and this function will extract the analytics payload automatically.
-    """
     if not isinstance(payload, dict) or not payload:
-        raise HTTPException(status_code=400, detail="Please send the analytics output from the second API.")
+        raise HTTPException(
+            status_code=400,
+            detail="Please send the analytics output from the second API.",
+        )
 
     if isinstance(payload.get("summary"), dict):
         engineering_json = payload["summary"]
@@ -135,7 +252,10 @@ def maintenance_prediction(payload: dict[str, Any]) -> dict[str, Any]:
         engineering_json = payload
 
     if not isinstance(engineering_json, dict) or not engineering_json:
-        raise HTTPException(status_code=400, detail="The analytics payload is empty or invalid.")
+        raise HTTPException(
+            status_code=400,
+            detail="The analytics payload is empty or invalid.",
+        )
 
     base_dir = Path(__file__).resolve().parent
     manual_pdf_path = str(base_dir / "data" / "AeroTech_ATX200_Maintenance_Manual.pdf")
@@ -156,10 +276,13 @@ def maintenance_prediction(payload: dict[str, Any]) -> dict[str, Any]:
             "service_name": "bedrock-runtime",
             "region_name": aws_region,
         }
-        
-        # Only add explicit credentials if they are provided in .env
-        # Otherwise, boto3 will fall back to default credential providers (e.g., ~/.aws/credentials)
-        if aws_access_key and aws_access_key != "YOUR_ACCESS_KEY" and aws_secret_key and aws_secret_key != "YOUR_SECRET_KEY":
+
+        if (
+            aws_access_key
+            and aws_access_key != "YOUR_ACCESS_KEY"
+            and aws_secret_key
+            and aws_secret_key != "YOUR_SECRET_KEY"
+        ):
             boto3_kwargs["aws_access_key_id"] = aws_access_key
             boto3_kwargs["aws_secret_access_key"] = aws_secret_key
 

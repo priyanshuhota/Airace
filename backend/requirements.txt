@@ -1,7 +1,16 @@
 pandas
+numpy
 boto3
 fastapi
 uvicorn
 openpyxl
 python-multipart
 python-dotenv
+scikit-learn
+matplotlib
+xgboost
+lightgbm
+joblib
+seaborn
+shap
+txt

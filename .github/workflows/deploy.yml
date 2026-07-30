@@ -40,6 +40,33 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ----------------------------------------------------
+      # Setup Python for Model Training
+      # ----------------------------------------------------
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ----------------------------------------------------
+      # Install Backend Dependencies
+      # ----------------------------------------------------
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      # ----------------------------------------------------
+      # Train Predictive Maintenance Model
+      # ----------------------------------------------------
+
+      - name: Train Predictive Maintenance Model
+        run: |
+          cd backend
+          python -m src.aircraft_maintenance.train_model
+
+      # ----------------------------------------------------
       # Login to Amazon ECR
       # ----------------------------------------------------
 
@@ -136,7 +163,7 @@ jobs:
             --from-literal=AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
             --from-literal=AWS_REGION=${{ secrets.AWS_REGION }} \
             --dry-run=client -o yaml | kubectl apply -f -
-            
+
       # ----------------------------------------------------
       # Deploy Kubernetes Resources
       # ----------------------------------------------------
