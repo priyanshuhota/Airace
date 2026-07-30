@@ -13,7 +13,9 @@ async function request(path, options = {}) {
     });
 
     const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await response.json() : await response.text();
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : await response.text();
 
     if (!response.ok) {
       throw new Error(typeof data === 'string' ? data : data.detail || 'Request failed');
@@ -41,6 +43,16 @@ export async function uploadAnalyticsFile(file) {
   formData.append('excel_file', file);
 
   return request('/aircraft/analytics', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function getPredictiveMaintenance(file) {
+  const formData = new FormData();
+  formData.append('excel_file', file);
+
+  return request('/aircraft/predictive-maintenance', {
     method: 'POST',
     body: formData,
   });

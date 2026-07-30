@@ -75,6 +75,12 @@ function App() {
   const currentRecord = analyticsResult?.summary?.current_record;
   const historicalAnalysis = analyticsResult?.summary?.historical_analysis || [];
 
+  const predictiveBlock = analyticsResult?.predictive_maintenance || null;
+  const predictivePrediction = predictiveBlock?.prediction || null;
+  const predictiveEvaluation = predictiveBlock?.model_evaluation || null;
+  const predictiveClassificationMetrics = predictiveEvaluation?.classification_metrics || null;
+  const predictiveRegressionMetrics = predictiveEvaluation?.regression_metrics || null;
+
   const metrics = useMemo(() => {
     if (!analyticsResult?.summary) return [];
 
@@ -152,7 +158,69 @@ function App() {
     ];
   }, [analyticsResult, currentRecord, historicalAnalysis.length]);
 
-  // Engine gauge data
+  const predictiveMetrics = useMemo(() => {
+    if (!predictivePrediction) return [];
+
+    return [
+      {
+        icon: '🧠',
+        label: 'Health Score',
+        value: predictivePrediction.engine_health_score != null
+          ? `${predictivePrediction.engine_health_score}%`
+          : 'N/A',
+        sub: 'Derived from predictive failure risk',
+        accent:
+          predictivePrediction.engine_health_score >= 85
+            ? 'green'
+            : predictivePrediction.engine_health_score >= 65
+            ? 'amber'
+            : 'red',
+      },
+      {
+        icon: '⚠',
+        label: 'Failure Probability',
+        value: predictivePrediction.failure_probability_next_n_flights != null
+          ? `${(predictivePrediction.failure_probability_next_n_flights * 100).toFixed(1)}%`
+          : 'N/A',
+        sub: 'Predicted within next 20 flights',
+        accent:
+          predictivePrediction.failure_probability_next_n_flights >= 0.4
+            ? 'red'
+            : predictivePrediction.failure_probability_next_n_flights >= 0.2
+            ? 'amber'
+            : 'green',
+      },
+      {
+        icon: '⏳',
+        label: 'Predicted RUL',
+        value: predictivePrediction.predicted_rul != null
+          ? `${predictivePrediction.predicted_rul} cycles`
+          : 'N/A',
+        sub: 'Estimated remaining useful life',
+        accent:
+          predictivePrediction.predicted_rul <= 20
+            ? 'red'
+            : predictivePrediction.predicted_rul <= 50
+            ? 'amber'
+            : 'green',
+      },
+      {
+        icon: '🛬',
+        label: 'Risk Band',
+        value: predictivePrediction.risk_band || 'N/A',
+        sub: predictivePrediction.predicted_failure_label ? 'Maintenance attention advised' : 'No immediate predicted failure',
+        accent:
+          predictivePrediction.risk_band === 'CRITICAL'
+            ? 'red'
+            : predictivePrediction.risk_band === 'HIGH'
+            ? 'orange'
+            : predictivePrediction.risk_band === 'MODERATE'
+            ? 'amber'
+            : 'teal',
+      },
+    ];
+  }, [predictivePrediction]);
+
   const engineGauges = useMemo(() => {
     if (!currentRecord) return [];
     return [
@@ -182,6 +250,11 @@ function App() {
     },
     {
       number: '3',
+      title: 'Predictive forecast',
+      description: 'Estimate health score, failure risk, and remaining useful life.',
+    },
+    {
+      number: '4',
       title: 'Action guidance',
       description: 'Receive AI-backed maintenance direction grounded in the manual.',
     },
@@ -217,8 +290,10 @@ function App() {
   const getRiskBadgeClass = (level) => {
     switch (level?.toUpperCase()) {
       case 'LOW': return 'risk-low';
-      case 'MEDIUM': return 'risk-medium';
-      case 'HIGH': return 'risk-high';
+      case 'MEDIUM':
+      case 'MODERATE': return 'risk-medium';
+      case 'HIGH':
+      case 'CRITICAL': return 'risk-high';
       default: return 'risk-medium';
     }
   };
@@ -295,36 +370,23 @@ function App() {
               </linearGradient>
             </defs>
 
-            {/* Flight path arc */}
             <path d="M24 82 C70 20, 130 20, 170 55 S250 108, 316 32" className="track-arc" />
-
-            {/* Departure node */}
             <circle cx="24" cy="82" r="5" className="track-node departure" />
-            {/* En route node */}
             <circle cx="170" cy="55" r="5" className="track-node active" />
-            {/* Landing node */}
             <circle cx="316" cy="32" r="5" className="track-node landing" />
 
-            {/* Proper airplane shape */}
             <g className="plane-group">
-              {/* Fuselage */}
               <ellipse cx="60" cy="62" rx="24" ry="5" className="plane-body" />
-              {/* Nose */}
               <path d="M84 62 Q92 62 88 60 Q84 58 84 62 Z" className="plane-body" />
-              {/* Main wing */}
               <path d="M54 62 L44 46 L48 46 L64 60 Z" className="plane-wing" />
               <path d="M54 62 L44 78 L48 78 L64 64 Z" className="plane-wing" />
-              {/* Tail fin */}
               <path d="M36 62 L30 50 L34 50 L38 60 Z" className="plane-tail" />
               <path d="M36 62 L32 56 L36 56 Z" className="plane-accent" />
-              {/* Tail horizontal */}
               <path d="M36 62 L30 68 L34 68 L38 64 Z" className="plane-tail" />
-              {/* Windows */}
               <circle cx="68" cy="61" r="1.2" className="plane-window" />
               <circle cx="64" cy="61" r="1.2" className="plane-window" />
               <circle cx="60" cy="61" r="1.2" className="plane-window" />
               <circle cx="56" cy="61" r="1.2" className="plane-window" />
-              {/* Engine glow */}
               <line x1="33" y1="62" x2="26" y2="62" className="plane-engine-glow" />
             </g>
           </svg>
@@ -384,7 +446,6 @@ function App() {
         </aside>
 
         <main className="main-content">
-          {/* Metric cards row */}
           <div className="metric-row">
             {metrics.map((metric) => (
               <div className={`metric-card ${metric.accent}`} key={metric.label}>
@@ -399,7 +460,6 @@ function App() {
           {error ? <div className="error-box">⚠ {error}</div> : null}
 
           <div className="split-view">
-            {/* ─── Engineering Analytics ─── */}
             <PanelCard title="Engineering Analytics" subtitle="Operational health derived from the uploaded aircraft dataset">
               {isLoading && loadingPhase === 'analytics' ? (
                 <div className="loading-overlay">
@@ -408,7 +468,6 @@ function App() {
                 </div>
               ) : analyticsResult ? (
                 <div className="analytics-panel">
-                  {/* Aircraft overview header */}
                   <div className="aircraft-header">
                     <div className="aircraft-avatar">✈</div>
                     <div className="aircraft-info">
@@ -421,7 +480,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Engine Gauges */}
                   <div className="gauge-grid">
                     {engineGauges.map((gauge) => {
                       const pct = Math.min(((gauge.value || 0) / gauge.max) * 100, 100);
@@ -441,13 +499,11 @@ function App() {
                     })}
                   </div>
 
-                  {/* Signal Trends */}
                   <div className="signal-list">
                     <h4>
                       Signal Trends
                       <span className="signal-count">{historicalAnalysis.length} parameters</span>
                     </h4>
-                    {/* Header row */}
                     <div className="signal-row" style={{ color: 'var(--text-dim)', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       <span>Parameter</span>
                       <span style={{ textAlign: 'right' }}>Current</span>
@@ -477,7 +533,6 @@ function App() {
               )}
             </PanelCard>
 
-            {/* ─── AI Maintenance Recommendation ─── */}
             <PanelCard
               title="AI Maintenance Recommendation"
               subtitle="Intelligent guidance generated from analytics & maintenance manual"
@@ -496,7 +551,6 @@ function App() {
                 </div>
               ) : recommendationSummary ? (
                 <div className="recommendation-panel">
-                  {/* AI Header */}
                   <div className="ai-header">
                     <div className="ai-brain-icon">🧠</div>
                     <div>
@@ -507,7 +561,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Health & Risk Status */}
                   <div className="status-banner">
                     <span className={`status-badge ${getHealthBadgeClass(recommendationSummary.health_status)}`}>
                       <span className="badge-dot" />
@@ -523,14 +576,12 @@ function App() {
                     </span>
                   </div>
 
-                  {/* Overall Summary */}
                   {recommendationSummary.overall_summary && (
                     <div className="overall-summary">
                       <p>{recommendationSummary.overall_summary}</p>
                     </div>
                   )}
 
-                  {/* Flight Decision */}
                   {recommendationSummary.final_flight_decision && (
                     <div className="flight-decision">
                       <div className="decision-header">
@@ -555,7 +606,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Threshold Violations */}
                   {recommendationSummary.threshold_violations?.length > 0 && (
                     <div className="violations-section">
                       <h4>⚠ Threshold Violations</h4>
@@ -582,7 +632,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Root Cause Analysis */}
                   {recommendationSummary.root_cause && (
                     <div className="root-cause-card">
                       <h4>🔍 Root Cause Analysis</h4>
@@ -598,7 +647,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Maintenance Actions */}
                   {recommendationSummary.maintenance_actions?.length > 0 && (
                     <div className="actions-list">
                       <h4>🔧 Maintenance Actions</h4>
@@ -615,7 +663,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Inspection Checklist */}
                   {recommendationSummary.inspection_checklist?.length > 0 && (
                     <div className="checklist-section">
                       <h4>📋 Inspection Checklist</h4>
@@ -632,7 +679,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Confidence & Work Order Row */}
                   <div className="info-row">
                     <div className="info-card">
                       <span className="info-label">AI Confidence</span>
@@ -665,7 +711,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Work Order Details */}
                   {recommendationSummary.work_order && (
                     <div className="work-order-card">
                       <h4>📝 Work Order — {recommendationSummary.work_order.title}</h4>
@@ -698,7 +743,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* Missing Information */}
                   {recommendationSummary.confidence?.missing_information?.length > 0 && (
                     <div className="summary-box" style={{ borderColor: 'rgba(251, 191, 36, 0.15)' }}>
                       <h4 style={{ color: 'var(--amber)' }}>⚡ Missing Information</h4>
@@ -717,6 +761,189 @@ function App() {
                 <p className="empty-state">
                   <span className="empty-state-icon">🧠</span>
                   Generate the AI recommendation to view the intelligent maintenance decision board.
+                </p>
+              )}
+            </PanelCard>
+          </div>
+
+          <div className="split-view" style={{ marginTop: '24px' }}>
+            <PanelCard
+              title="Predictive Maintenance Intelligence"
+              subtitle="ML-based forecast for failure risk, health score, and useful life"
+              badge={
+                <span className="panel-badge ai-badge">
+                  <span className="ai-sparkle">📈</span>
+                  Predictive ML
+                </span>
+              }
+            >
+              {analyticsResult ? (
+                predictivePrediction ? (
+                  <div className="analytics-panel">
+                    <div className="aircraft-header">
+                      <div className="aircraft-avatar">📈</div>
+                      <div className="aircraft-info">
+                        <h4>{predictivePrediction.aircraft_id} — Predictive Health Overview</h4>
+                        <div className="aircraft-meta">
+                          <span>🛬 Cycle {predictivePrediction.flight_cycle}</span>
+                          <span>⚠ Risk: {predictivePrediction.risk_band}</span>
+                          <span>🧠 ML Forecast Active</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="metric-row" style={{ marginTop: '8px' }}>
+                      {predictiveMetrics.map((metric) => (
+                        <div className={`metric-card ${metric.accent}`} key={metric.label}>
+                          <span className="metric-icon">{metric.icon}</span>
+                          <span className="metric-label">{metric.label}</span>
+                          <strong className="metric-value">{metric.value}</strong>
+                          <small className="metric-sub">{metric.sub}</small>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="status-banner" style={{ marginTop: '18px' }}>
+                      <span className={`status-badge ${getRiskBadgeClass(predictivePrediction.risk_band)}`}>
+                        <span className="badge-dot" />
+                        {predictivePrediction.risk_band} RISK
+                      </span>
+                      <span className={`status-badge ${predictivePrediction.predicted_failure_label ? 'critical' : 'ok'}`}>
+                        <span className="badge-dot" />
+                        {predictivePrediction.predicted_failure_label ? 'POTENTIAL FAILURE WITHIN HORIZON' : 'NO FAILURE PREDICTED WITHIN HORIZON'}
+                      </span>
+                    </div>
+
+                    {predictivePrediction.top_feature_snapshot && (
+                      <div className="signal-list" style={{ marginTop: '18px' }}>
+                        <h4>
+                          Current Predictive Input Snapshot
+                          <span className="signal-count">{Object.keys(predictivePrediction.top_feature_snapshot).length} fields</span>
+                        </h4>
+                        {Object.entries(predictivePrediction.top_feature_snapshot).map(([key, value]) => (
+                          <div key={key} className="signal-row">
+                            <span className="signal-name">{key.replace(/_/g, ' ')}</span>
+                            <span className="signal-value" style={{ gridColumn: 'span 3', textAlign: 'right' }}>
+                              {String(value)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="empty-state">
+                    <span className="empty-state-icon">📈</span>
+                    Predictive maintenance output is not available in the analytics response.
+                  </p>
+                )
+              ) : (
+                <p className="empty-state">
+                  <span className="empty-state-icon">📈</span>
+                  Generate analytics to unlock predictive health scoring, failure probability, and remaining useful life forecast.
+                </p>
+              )}
+            </PanelCard>
+
+            <PanelCard
+              title="Model Evaluation Snapshot"
+              subtitle="Reference metrics from the trained production model"
+            >
+              {analyticsResult ? (
+                predictiveEvaluation ? (
+                  <div className="recommendation-panel">
+                    <div className="info-row">
+                      <div className="info-card">
+                        <span className="info-label">Classification Accuracy</span>
+                        <span className="info-value" style={{ color: 'var(--cyan)' }}>
+                          {predictiveClassificationMetrics?.accuracy != null
+                            ? `${(predictiveClassificationMetrics.accuracy * 100).toFixed(1)}%`
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          ROC-AUC: {predictiveClassificationMetrics?.roc_auc != null
+                            ? predictiveClassificationMetrics.roc_auc.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          F1: {predictiveClassificationMetrics?.f1_score != null
+                            ? predictiveClassificationMetrics.f1_score.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="info-card">
+                        <span className="info-label">Failure Detection Quality</span>
+                        <span className="info-value" style={{ color: 'var(--teal)' }}>
+                          {predictiveClassificationMetrics?.recall != null
+                            ? `${(predictiveClassificationMetrics.recall * 100).toFixed(1)}%`
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          Precision: {predictiveClassificationMetrics?.precision != null
+                            ? predictiveClassificationMetrics.precision.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          Balanced Acc.: {predictiveClassificationMetrics?.balanced_accuracy != null
+                            ? predictiveClassificationMetrics.balanced_accuracy.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="info-row" style={{ marginTop: '14px' }}>
+                      <div className="info-card">
+                        <span className="info-label">RUL Regression Fit</span>
+                        <span className="info-value" style={{ color: 'var(--purple)' }}>
+                          {predictiveRegressionMetrics?.r2_score != null
+                            ? predictiveRegressionMetrics.r2_score.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          Explained Variance: {predictiveRegressionMetrics?.explained_variance != null
+                            ? predictiveRegressionMetrics.explained_variance.toFixed(3)
+                            : 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="info-card">
+                        <span className="info-label">RUL Error Range</span>
+                        <span className="info-value" style={{ color: 'var(--sky)' }}>
+                          {predictiveRegressionMetrics?.rmse != null
+                            ? predictiveRegressionMetrics.rmse.toFixed(2)
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          MAE: {predictiveRegressionMetrics?.mae != null
+                            ? predictiveRegressionMetrics.mae.toFixed(2)
+                            : 'N/A'}
+                        </span>
+                        <span className="info-sub">
+                          RMSE in predicted cycles
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="summary-box" style={{ marginTop: '18px' }}>
+                      <h4>📌 Interpretation</h4>
+                      <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.6 }}>
+                        The predictive block complements deterministic engineering analytics by estimating short-horizon failure likelihood
+                        and remaining useful life from historical sensor behavior. Use the classification metrics to judge failure-alert
+                        quality and the regression metrics to judge RUL forecast reliability.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="empty-state">
+                    <span className="empty-state-icon">🧪</span>
+                    Model evaluation details are not available yet.
+                  </p>
+                )
+              ) : (
+                <p className="empty-state">
+                  <span className="empty-state-icon">🧪</span>
+                  Upload a flight dataset to view predictive model quality indicators.
                 </p>
               )}
             </PanelCard>
