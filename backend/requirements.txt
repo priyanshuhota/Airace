@@ -12,5 +12,3 @@ xgboost
 lightgbm
 joblib
 seaborn
-shap
-txt
