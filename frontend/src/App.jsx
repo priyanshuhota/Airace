@@ -779,7 +779,7 @@ function App() {
             </PanelCard>
           </div>
 
-          <div className="split-view" style={{ marginTop: '24px' }}>
+          <div className="split-view predictive-section">
             <PanelCard
               title="Predictive Maintenance Intelligence"
               subtitle="ML-based forecast for failure risk, health score, and useful life"

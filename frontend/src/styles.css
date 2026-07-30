@@ -200,7 +200,7 @@ input {
 /* ─── Workflow Strip ─── */
 .workflow-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -723,6 +723,50 @@ input {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+/* ─── Predictive Section ─── */
+.predictive-section {
+  margin-top: 24px;
+  position: relative;
+}
+
+.predictive-section::before {
+  content: 'Predictive Maintenance Intelligence';
+  display: block;
+  margin-bottom: 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--violet);
+  opacity: 0.95;
+}
+
+.predictive-section .panel-card {
+  border-color: rgba(167, 139, 250, 0.18);
+  box-shadow: var(--shadow-md), 0 0 24px rgba(167, 139, 250, 0.06);
+}
+
+.predictive-section .panel-card:hover {
+  border-color: rgba(167, 139, 250, 0.28);
+}
+
+.predictive-section .metric-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.predictive-section .metric-card {
+  min-height: 132px;
+}
+
+.predictive-section .aircraft-avatar {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.18), rgba(192, 132, 252, 0.08));
+  border: 1px solid rgba(167, 139, 250, 0.28);
+}
+
+.predictive-section .summary-box {
+  border-color: rgba(167, 139, 250, 0.14);
 }
 
 /* ─── Analytics Panel ─── */
@@ -1773,6 +1817,10 @@ input {
   .metric-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .predictive-section .metric-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 768px) {
@@ -1796,6 +1844,10 @@ input {
 
   .metric-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .predictive-section .metric-row {
+    grid-template-columns: 1fr;
   }
 
   .gauge-grid {
