@@ -457,6 +457,19 @@ function App() {
             ))}
           </div>
 
+          {predictivePrediction ? (
+            <div className="metric-row" style={{ marginTop: '14px' }}>
+              {predictiveMetrics.map((metric) => (
+                <div className={`metric-card ${metric.accent}`} key={`predictive-${metric.label}`}>
+                  <span className="metric-icon">{metric.icon}</span>
+                  <span className="metric-label">{metric.label}</span>
+                  <strong className="metric-value">{metric.value}</strong>
+                  <small className="metric-sub">{metric.sub}</small>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {error ? <div className="error-box">⚠ {error}</div> : null}
 
           <div className="split-view">
