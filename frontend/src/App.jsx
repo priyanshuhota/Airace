@@ -28,6 +28,7 @@ function App() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
     if (!excelFile) {
       setError('Please upload an Excel file first.');
       return;
@@ -124,22 +125,39 @@ function App() {
         icon: '⚠',
         label: 'Risk Score',
         value: riskSignal ? riskSignal.latest_value : 'N/A',
-        sub: riskSignal ? `${riskSignal.change_percent > 0 ? '+' : ''}${riskSignal.change_percent.toFixed(1)}% vs history` : '',
-        accent: riskSignal && riskSignal.latest_value > 70 ? 'red' : riskSignal && riskSignal.latest_value > 50 ? 'amber' : 'green',
+        sub: riskSignal
+          ? `${riskSignal.change_percent > 0 ? '+' : ''}${riskSignal.change_percent.toFixed(1)}% vs history`
+          : '',
+        accent:
+          riskSignal && riskSignal.latest_value > 70
+            ? 'red'
+            : riskSignal && riskSignal.latest_value > 50
+            ? 'amber'
+            : 'green',
       },
       {
         icon: '🛡',
         label: 'Remaining Life',
         value: rulSignal ? `${rulSignal.latest_value} cycles` : 'N/A',
-        sub: rulSignal ? `${rulSignal.change_percent > 0 ? '+' : ''}${rulSignal.change_percent.toFixed(1)}% vs avg` : '',
-        accent: rulSignal && rulSignal.latest_value < 30 ? 'red' : rulSignal && rulSignal.latest_value < 50 ? 'amber' : 'green',
+        sub: rulSignal
+          ? `${rulSignal.change_percent > 0 ? '+' : ''}${rulSignal.change_percent.toFixed(1)}% vs avg`
+          : '',
+        accent:
+          rulSignal && rulSignal.latest_value < 30
+            ? 'red'
+            : rulSignal && rulSignal.latest_value < 50
+            ? 'amber'
+            : 'green',
       },
       {
         icon: '📳',
         label: 'Vibration',
         value: vibrationSignal ? `${vibrationSignal.latest_value} mm/s` : 'N/A',
         sub: vibrationSignal ? vibrationSignal.trend_direction : '',
-        accent: vibrationSignal && vibrationSignal.trend_direction === 'INCREASING' ? 'orange' : 'teal',
+        accent:
+          vibrationSignal && vibrationSignal.trend_direction === 'INCREASING'
+            ? 'orange'
+            : 'teal',
       },
       {
         icon: '📊',
@@ -165,9 +183,10 @@ function App() {
       {
         icon: '🧠',
         label: 'Health Score',
-        value: predictivePrediction.engine_health_score != null
-          ? `${predictivePrediction.engine_health_score}%`
-          : 'N/A',
+        value:
+          predictivePrediction.engine_health_score != null
+            ? `${predictivePrediction.engine_health_score}%`
+            : 'N/A',
         sub: 'Derived from predictive failure risk',
         accent:
           predictivePrediction.engine_health_score >= 85
@@ -179,9 +198,10 @@ function App() {
       {
         icon: '⚠',
         label: 'Failure Probability',
-        value: predictivePrediction.failure_probability_next_n_flights != null
-          ? `${(predictivePrediction.failure_probability_next_n_flights * 100).toFixed(1)}%`
-          : 'N/A',
+        value:
+          predictivePrediction.failure_probability_next_n_flights != null
+            ? `${(predictivePrediction.failure_probability_next_n_flights * 100).toFixed(1)}%`
+            : 'N/A',
         sub: 'Predicted within next 20 flights',
         accent:
           predictivePrediction.failure_probability_next_n_flights >= 0.4
@@ -193,9 +213,10 @@ function App() {
       {
         icon: '⏳',
         label: 'Predicted RUL',
-        value: predictivePrediction.predicted_rul != null
-          ? `${predictivePrediction.predicted_rul} cycles`
-          : 'N/A',
+        value:
+          predictivePrediction.predicted_rul != null
+            ? `${predictivePrediction.predicted_rul} cycles`
+            : 'N/A',
         sub: 'Estimated remaining useful life',
         accent:
           predictivePrediction.predicted_rul <= 20
@@ -208,7 +229,9 @@ function App() {
         icon: '🛬',
         label: 'Risk Band',
         value: predictivePrediction.risk_band || 'N/A',
-        sub: predictivePrediction.predicted_failure_label ? 'Maintenance attention advised' : 'No immediate predicted failure',
+        sub: predictivePrediction.predicted_failure_label
+          ? 'Maintenance attention advised'
+          : 'No immediate predicted failure',
         accent:
           predictivePrediction.risk_band === 'CRITICAL'
             ? 'red'
@@ -269,45 +292,63 @@ function App() {
 
   const getTrendArrow = (direction) => {
     switch (direction) {
-      case 'INCREASING': return '↑';
-      case 'DECREASING': return '↓';
-      case 'STABLE': return '→';
-      default: return '·';
+      case 'INCREASING':
+        return '↑';
+      case 'DECREASING':
+        return '↓';
+      case 'STABLE':
+        return '→';
+      default:
+        return '·';
     }
   };
 
-  const getHealthBadgeClass = (status) => {
-    switch (status?.toUpperCase()) {
-      case 'MONITOR': return 'monitor';
+  const getHealthBadgeClass = (statusValue) => {
+    switch (statusValue?.toUpperCase()) {
+      case 'MONITOR':
+        return 'monitor';
       case 'OK':
-      case 'NORMAL': return 'ok';
+      case 'NORMAL':
+        return 'ok';
       case 'CRITICAL':
-      case 'ALERT': return 'critical';
-      default: return 'monitor';
+      case 'ALERT':
+        return 'critical';
+      default:
+        return 'monitor';
     }
   };
 
   const getRiskBadgeClass = (level) => {
     switch (level?.toUpperCase()) {
-      case 'LOW': return 'risk-low';
+      case 'LOW':
+        return 'risk-low';
       case 'MEDIUM':
-      case 'MODERATE': return 'risk-medium';
+      case 'MODERATE':
+        return 'risk-medium';
       case 'HIGH':
-      case 'CRITICAL': return 'risk-high';
-      default: return 'risk-medium';
+      case 'CRITICAL':
+        return 'risk-high';
+      default:
+        return 'risk-medium';
     }
   };
 
   return (
     <div className="app-shell">
+      <div className="background-orb orb-1" aria-hidden="true" />
+      <div className="background-orb orb-2" aria-hidden="true" />
+      <div className="background-orb orb-3" aria-hidden="true" />
+      <div className="noise-overlay" aria-hidden="true" />
+
       <header className="topbar">
         <div className="topbar-glow" aria-hidden="true" />
         <div className="hero-copy">
-          <p className="eyebrow">
+          <p className="eyebrow hero-eyebrow">
             <span className="eyebrow-line" />
             Post-landing operational intelligence
             <span className="eyebrow-line" />
           </p>
+
           <h1>
             <span className="logo-mark" aria-hidden="true">
               <svg viewBox="0 0 36 36" width="36" height="36">
@@ -316,28 +357,35 @@ function App() {
                 <defs>
                   <linearGradient id="logoGrad" x1="0" y1="0" x2="36" y2="36">
                     <stop offset="0%" stopColor="#22d3ee" />
+                    <stop offset="50%" stopColor="#60a5fa" />
                     <stop offset="100%" stopColor="#a78bfa" />
                   </linearGradient>
                 </defs>
                 <text x="18" y="22" textAnchor="middle" fontSize="16" fill="url(#logoGrad)">✈</text>
               </svg>
             </span>
+
             <span className="title-text">
               <span className="title-aero">Air</span>
               <span className="title-care">ace</span>
             </span>
+
             <span className="title-divider" />
             <span className="title-suffix">Maintenance</span>
           </h1>
+
           <p className="hero-subtitle">
-            From touchdown to action — every flight is reviewed with clarity and precision.
+            From touchdown to action — every flight is reviewed with clarity, predictive intelligence,
+            and maintenance-ready decision support.
           </p>
+
           <div className="hero-tags">
             <span className="hero-tag">AI-Powered</span>
-            <span className="hero-tag">Real-time Analytics</span>
-            <span className="hero-tag">Manual-Grounded</span>
+            <span className="hero-tag">Predictive Analytics</span>
+            <span className="hero-tag">Operations Ready</span>
           </div>
         </div>
+
         <div className="status-pill">
           <span className="status-dot" />
           {status}
@@ -357,16 +405,24 @@ function App() {
       <section className="flight-track-card">
         <div className="track-copy">
           <p className="eyebrow">Live flight monitoring</p>
-          <h3>{analyticsResult ? `Flight ${analyticsResult.aircraft_id} has landed and is being assessed.` : 'A landed flight is ready for assessment.'}</h3>
-          <p>The telemetry loop is visualized here so the transition from landing to maintenance review feels immediate and operational.</p>
+          <h3>
+            {analyticsResult
+              ? `Flight ${analyticsResult.aircraft_id} has landed and is being assessed.`
+              : 'A landed flight is ready for assessment.'}
+          </h3>
+          <p>
+            The telemetry loop is visualized here so the transition from landing to maintenance review
+            feels immediate, operational, and mission-critical.
+          </p>
         </div>
+
         <div className="track-visual" aria-hidden="true">
           <svg viewBox="0 0 340 120" role="presentation">
             <defs>
               <linearGradient id="trackGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.3" />
-                <stop offset="50%" stopColor="#2dd4bf" stopOpacity="0.7" />
-                <stop offset="100%" stopColor="#34d399" stopOpacity="0.3" />
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
+                <stop offset="50%" stopColor="#2dd4bf" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.35" />
               </linearGradient>
             </defs>
 
@@ -390,6 +446,7 @@ function App() {
               <line x1="33" y1="62" x2="26" y2="62" className="plane-engine-glow" />
             </g>
           </svg>
+
           <div className="track-labels">
             <span>Departure</span>
             <span>En route</span>
@@ -400,7 +457,12 @@ function App() {
 
       <div className="dashboard-grid">
         <aside className="sidebar">
-          <PanelCard title="Flight Data Upload" subtitle="Upload the landed-flight telemetry export and begin the engineering review.">
+          <PanelCard
+            title="Flight Data Upload"
+            subtitle="Upload the landed-flight telemetry export and begin the engineering review."
+            accent="cyan"
+            icon="📥"
+          >
             <form onSubmit={handleSubmit} className="upload-form">
               <label className="file-field">
                 <span>Engineering Excel (.xlsx)</span>
@@ -411,12 +473,20 @@ function App() {
                 />
               </label>
 
+              <div className="file-meta">
+                <span className="file-meta-label">Loaded file</span>
+                <span className="file-meta-value">{excelFile ? excelFile.name : 'No file selected yet'}</span>
+              </div>
+
               <p className="helper-text compact">
-                This stage compares the latest landed-flight telemetry with the historical baseline to reveal the current aircraft condition.
+                This stage compares the latest landed-flight telemetry with the historical baseline
+                to reveal the current aircraft condition.
               </p>
 
               <button type="submit" className="primary-btn" disabled={isLoading}>
-                {isLoading && loadingPhase === 'analytics' ? 'Analyzing telemetry...' : 'Generate Engineering Analytics'}
+                {isLoading && loadingPhase === 'analytics'
+                  ? 'Analyzing telemetry...'
+                  : 'Generate Engineering Analytics'}
               </button>
             </form>
           </PanelCard>
@@ -425,6 +495,7 @@ function App() {
             title="Maintenance Guidance"
             subtitle="Use the analytics output and the aviation manual for action guidance."
             accent="ai"
+            icon="🧠"
           >
             <label className="file-field">
               <span>Maintenance PDF (.pdf)</span>
@@ -435,18 +506,55 @@ function App() {
               />
             </label>
 
+            <div className="file-meta">
+              <span className="file-meta-label">Loaded manual</span>
+              <span className="file-meta-value">
+                {manualFile ? manualFile.name : 'No maintenance manual selected yet'}
+              </span>
+            </div>
+
             <p className="helper-text compact">
-              {manualFile ? `Manual loaded: ${manualFile.name}` : 'The PDF is used to enrich the AI recommendation with manual-specific guidance.'}
+              The PDF is used to enrich the AI recommendation with manual-specific maintenance guidance.
             </p>
 
-            <button className="primary-btn wide ai-btn" onClick={handleRecommendation} disabled={isLoading || !analyticsResult}>
-              {isLoading && loadingPhase === 'ai' ? '✨ AI is analyzing...' : '✨ Generate AI Recommendation'}
+            <button
+              className="primary-btn wide ai-btn"
+              onClick={handleRecommendation}
+              disabled={isLoading || !analyticsResult}
+            >
+              {isLoading && loadingPhase === 'ai'
+                ? '✨ AI is analyzing...'
+                : '✨ Generate AI Recommendation'}
             </button>
+          </PanelCard>
+
+          <PanelCard
+            title="Mission Snapshot"
+            subtitle="At-a-glance operational readiness of the current review session."
+            accent="violet"
+            icon="🛰"
+          >
+            <div className="mini-status-stack">
+              <div className="mini-status-card">
+                <span className="mini-status-label">Telemetry</span>
+                <strong className="mini-status-value">{analyticsResult ? 'Loaded' : 'Pending'}</strong>
+              </div>
+              <div className="mini-status-card">
+                <span className="mini-status-label">Manual</span>
+                <strong className="mini-status-value">{manualFile ? 'Loaded' : 'Optional / Pending'}</strong>
+              </div>
+              <div className="mini-status-card">
+                <span className="mini-status-label">AI Guidance</span>
+                <strong className="mini-status-value">{recommendationSummary ? 'Ready' : 'Not generated'}</strong>
+              </div>
+            </div>
           </PanelCard>
         </aside>
 
         <main className="main-content">
-          <div className="metric-row">
+          <div className="section-label">Aircraft overview</div>
+
+          <div className="metric-row metric-row-top">
             {metrics.map((metric) => (
               <div className={`metric-card ${metric.accent}`} key={metric.label}>
                 <span className="metric-icon">{metric.icon}</span>
@@ -458,22 +566,30 @@ function App() {
           </div>
 
           {predictivePrediction ? (
-            <div className="metric-row" style={{ marginTop: '14px' }}>
-              {predictiveMetrics.map((metric) => (
-                <div className={`metric-card ${metric.accent}`} key={`predictive-${metric.label}`}>
-                  <span className="metric-icon">{metric.icon}</span>
-                  <span className="metric-label">{metric.label}</span>
-                  <strong className="metric-value">{metric.value}</strong>
-                  <small className="metric-sub">{metric.sub}</small>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="section-label section-label-tight">Predictive highlights</div>
+              <div className="metric-row metric-row-predictive">
+                {predictiveMetrics.map((metric) => (
+                  <div className={`metric-card ${metric.accent}`} key={`predictive-${metric.label}`}>
+                    <span className="metric-icon">{metric.icon}</span>
+                    <span className="metric-label">{metric.label}</span>
+                    <strong className="metric-value">{metric.value}</strong>
+                    <small className="metric-sub">{metric.sub}</small>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : null}
 
           {error ? <div className="error-box">⚠ {error}</div> : null}
 
           <div className="split-view">
-            <PanelCard title="Engineering Analytics" subtitle="Operational health derived from the uploaded aircraft dataset">
+            <PanelCard
+              title="Engineering Analytics"
+              subtitle="Operational health derived from the uploaded aircraft dataset"
+              accent="cyan"
+              icon="📊"
+            >
               {isLoading && loadingPhase === 'analytics' ? (
                 <div className="loading-overlay">
                   <div className="loading-spinner" />
@@ -484,7 +600,9 @@ function App() {
                   <div className="aircraft-header">
                     <div className="aircraft-avatar">✈</div>
                     <div className="aircraft-info">
-                      <h4>{analyticsResult.aircraft_id} — {currentRecord?.Aircraft_Model || 'Unknown'}</h4>
+                      <h4>
+                        {analyticsResult.aircraft_id} — {currentRecord?.Aircraft_Model || 'Unknown'}
+                      </h4>
                       <div className="aircraft-meta">
                         <span>🔧 {currentRecord?.Engine_Model || 'N/A'}</span>
                         <span>📍 {currentRecord?.Airport_Code || 'N/A'}</span>
@@ -494,12 +612,10 @@ function App() {
                   </div>
 
                   {predictivePrediction ? (
-                    <div className="summary-box" style={{ borderColor: 'rgba(167, 139, 250, 0.18)', marginBottom: '4px' }}>
-                      <h4 style={{ color: 'var(--violet)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        📈 Predictive Maintenance Intelligence
-                      </h4>
+                    <div className="summary-box predictive-hero-box">
+                      <h4 className="summary-title-accent">📈 Predictive Maintenance Intelligence</h4>
 
-                      <div className="status-banner" style={{ marginTop: '10px', marginBottom: '12px' }}>
+                      <div className="status-banner">
                         <span className={`status-badge ${getRiskBadgeClass(predictivePrediction.risk_band)}`}>
                           <span className="badge-dot" />
                           {predictivePrediction.risk_band} RISK
@@ -551,7 +667,8 @@ function App() {
                               : 'N/A'}
                           </span>
                           <span className="info-sub">
-                            ROC-AUC: {predictiveClassificationMetrics?.roc_auc != null
+                            ROC-AUC:{' '}
+                            {predictiveClassificationMetrics?.roc_auc != null
                               ? predictiveClassificationMetrics.roc_auc.toFixed(3)
                               : 'N/A'}
                           </span>
@@ -564,6 +681,7 @@ function App() {
                     {engineGauges.map((gauge) => {
                       const pct = Math.min(((gauge.value || 0) / gauge.max) * 100, 100);
                       const level = getGaugeLevel(gauge.value || 0, gauge.warn, gauge.max);
+
                       return (
                         <div className="gauge-card" key={gauge.label}>
                           <span className="gauge-label">{gauge.label}</span>
@@ -584,18 +702,21 @@ function App() {
                       Signal Trends
                       <span className="signal-count">{historicalAnalysis.length} parameters</span>
                     </h4>
-                    <div className="signal-row" style={{ color: 'var(--text-dim)', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+
+                    <div className="signal-row signal-row-head">
                       <span>Parameter</span>
                       <span style={{ textAlign: 'right' }}>Current</span>
                       <span style={{ textAlign: 'right' }}>Change</span>
                       <span>Trend</span>
                     </div>
+
                     {historicalAnalysis.map((item) => (
                       <div key={item.column} className="signal-row">
                         <span className="signal-name">{item.column.replace(/_/g, ' ')}</span>
                         <span className="signal-value">{item.latest_value.toLocaleString()}</span>
                         <span className={`signal-change ${item.change_percent >= 0 ? 'positive' : 'negative'}`}>
-                          {item.change_percent > 0 ? '+' : ''}{item.change_percent.toFixed(1)}%
+                          {item.change_percent > 0 ? '+' : ''}
+                          {item.change_percent.toFixed(1)}%
                         </span>
                         <span className={`trend-badge ${item.trend_direction.toLowerCase()}`}>
                           <span className="trend-arrow">{getTrendArrow(item.trend_direction)}</span>
@@ -617,6 +738,7 @@ function App() {
               title="AI Maintenance Recommendation"
               subtitle="Intelligent guidance generated from analytics & maintenance manual"
               accent="ai"
+              icon="✨"
               badge={
                 <span className="panel-badge ai-badge">
                   <span className="ai-sparkle">✨</span>
@@ -635,7 +757,7 @@ function App() {
                     <div className="ai-brain-icon">🧠</div>
                     <div>
                       <span className="ai-label">AI Analysis</span>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <div className="ai-meta-line">
                         {recommendationSummary.aircraft} · {recommendationSummary.aircraft_model}
                       </div>
                     </div>
@@ -665,19 +787,27 @@ function App() {
                   {recommendationSummary.final_flight_decision && (
                     <div className="flight-decision">
                       <div className="decision-header">
-                        <div className={`decision-icon ${recommendationSummary.final_flight_decision.can_fly_now ? 'fly' : 'ground'}`}>
+                        <div
+                          className={`decision-icon ${
+                            recommendationSummary.final_flight_decision.can_fly_now ? 'fly' : 'ground'
+                          }`}
+                        >
                           {recommendationSummary.final_flight_decision.can_fly_now ? '✅' : '🚫'}
                         </div>
                         <div>
-                          <div className="decision-title">{recommendationSummary.final_flight_decision.decision?.replace(/_/g, ' ')}</div>
+                          <div className="decision-title">
+                            {recommendationSummary.final_flight_decision.decision?.replace(/_/g, ' ')}
+                          </div>
                           <div className="decision-subtitle">
                             {recommendationSummary.final_flight_decision.required_before_next_flight}
                           </div>
                         </div>
                       </div>
+
                       <div className="decision-statement">
                         {recommendationSummary.final_flight_decision.ui_statement}
                       </div>
+
                       {recommendationSummary.final_flight_decision.decision_rationale && (
                         <div className="decision-rationale">
                           💡 {recommendationSummary.final_flight_decision.decision_rationale}
@@ -695,6 +825,7 @@ function App() {
                             <span className="violation-param">{v.parameter?.replace(/_/g, ' ')}</span>
                             <span className="violation-severity">{v.severity}</span>
                           </div>
+
                           <div className="violation-values">
                             <div className="violation-val">
                               <label>Observed</label>
@@ -705,6 +836,7 @@ function App() {
                               <span>{v.manual_threshold}</span>
                             </div>
                           </div>
+
                           {v.explanation && <div className="violation-explanation">{v.explanation}</div>}
                           {v.manual_reference && <span className="manual-ref">📖 {v.manual_reference}</span>}
                         </div>
@@ -777,6 +909,7 @@ function App() {
                         <span className="info-sub">{recommendationSummary.confidence.rationale}</span>
                       )}
                     </div>
+
                     <div className="info-card">
                       <span className="info-label">Work Order Type</span>
                       <span className="info-value" style={{ color: 'var(--sky)' }}>
@@ -794,6 +927,7 @@ function App() {
                   {recommendationSummary.work_order && (
                     <div className="work-order-card">
                       <h4>📝 Work Order — {recommendationSummary.work_order.title}</h4>
+
                       <div className="wo-meta">
                         <div className="wo-meta-item">
                           <label>Aircraft</label>
@@ -816,7 +950,9 @@ function App() {
                       {recommendationSummary.work_order.required_parts_or_tools?.length > 0 && (
                         <div className="wo-parts">
                           {recommendationSummary.work_order.required_parts_or_tools.map((part, i) => (
-                            <span className="wo-part-tag" key={i}>{part}</span>
+                            <span className="wo-part-tag" key={i}>
+                              {part}
+                            </span>
                           ))}
                         </div>
                       )}
@@ -824,14 +960,11 @@ function App() {
                   )}
 
                   {recommendationSummary.confidence?.missing_information?.length > 0 && (
-                    <div className="summary-box" style={{ borderColor: 'rgba(251, 191, 36, 0.15)' }}>
+                    <div className="summary-box missing-info-box">
                       <h4 style={{ color: 'var(--amber)' }}>⚡ Missing Information</h4>
-                      <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0' }}>
+                      <ul className="missing-list">
                         {recommendationSummary.confidence.missing_information.map((info, i) => (
-                          <li key={i} style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '3px 0', paddingLeft: '14px', position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 0, color: 'var(--amber)' }}>·</span>
-                            {info}
-                          </li>
+                          <li key={i}>{info}</li>
                         ))}
                       </ul>
                     </div>
@@ -850,6 +983,8 @@ function App() {
             <PanelCard
               title="Predictive Maintenance Intelligence"
               subtitle="ML-based forecast for failure risk, health score, and useful life"
+              accent="violet"
+              icon="📈"
               badge={
                 <span className="panel-badge ai-badge">
                   <span className="ai-sparkle">📈</span>
@@ -872,7 +1007,7 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="metric-row" style={{ marginTop: '8px' }}>
+                    <div className="metric-row metric-row-predictive-inner">
                       {predictiveMetrics.map((metric) => (
                         <div className={`metric-card ${metric.accent}`} key={metric.label}>
                           <span className="metric-icon">{metric.icon}</span>
@@ -883,23 +1018,28 @@ function App() {
                       ))}
                     </div>
 
-                    <div className="status-banner" style={{ marginTop: '18px' }}>
+                    <div className="status-banner">
                       <span className={`status-badge ${getRiskBadgeClass(predictivePrediction.risk_band)}`}>
                         <span className="badge-dot" />
                         {predictivePrediction.risk_band} RISK
                       </span>
                       <span className={`status-badge ${predictivePrediction.predicted_failure_label ? 'critical' : 'ok'}`}>
                         <span className="badge-dot" />
-                        {predictivePrediction.predicted_failure_label ? 'POTENTIAL FAILURE WITHIN HORIZON' : 'NO FAILURE PREDICTED WITHIN HORIZON'}
+                        {predictivePrediction.predicted_failure_label
+                          ? 'POTENTIAL FAILURE WITHIN HORIZON'
+                          : 'NO FAILURE PREDICTED WITHIN HORIZON'}
                       </span>
                     </div>
 
                     {predictivePrediction.top_feature_snapshot && (
-                      <div className="signal-list" style={{ marginTop: '18px' }}>
+                      <div className="signal-list">
                         <h4>
                           Current Predictive Input Snapshot
-                          <span className="signal-count">{Object.keys(predictivePrediction.top_feature_snapshot).length} fields</span>
+                          <span className="signal-count">
+                            {Object.keys(predictivePrediction.top_feature_snapshot).length} fields
+                          </span>
                         </h4>
+
                         {Object.entries(predictivePrediction.top_feature_snapshot).map(([key, value]) => (
                           <div key={key} className="signal-row">
                             <span className="signal-name">{key.replace(/_/g, ' ')}</span>
@@ -928,6 +1068,8 @@ function App() {
             <PanelCard
               title="Model Evaluation Snapshot"
               subtitle="Reference metrics from the trained production model"
+              accent="blue"
+              icon="🧪"
             >
               {analyticsResult ? (
                 predictiveEvaluation ? (
@@ -941,12 +1083,14 @@ function App() {
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          ROC-AUC: {predictiveClassificationMetrics?.roc_auc != null
+                          ROC-AUC:{' '}
+                          {predictiveClassificationMetrics?.roc_auc != null
                             ? predictiveClassificationMetrics.roc_auc.toFixed(3)
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          F1: {predictiveClassificationMetrics?.f1_score != null
+                          F1:{' '}
+                          {predictiveClassificationMetrics?.f1_score != null
                             ? predictiveClassificationMetrics.f1_score.toFixed(3)
                             : 'N/A'}
                         </span>
@@ -960,19 +1104,21 @@ function App() {
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          Precision: {predictiveClassificationMetrics?.precision != null
+                          Precision:{' '}
+                          {predictiveClassificationMetrics?.precision != null
                             ? predictiveClassificationMetrics.precision.toFixed(3)
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          Balanced Acc.: {predictiveClassificationMetrics?.balanced_accuracy != null
+                          Balanced Acc.:{' '}
+                          {predictiveClassificationMetrics?.balanced_accuracy != null
                             ? predictiveClassificationMetrics.balanced_accuracy.toFixed(3)
                             : 'N/A'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="info-row" style={{ marginTop: '14px' }}>
+                    <div className="info-row">
                       <div className="info-card">
                         <span className="info-label">RUL Regression Fit</span>
                         <span className="info-value" style={{ color: 'var(--purple)' }}>
@@ -981,7 +1127,8 @@ function App() {
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          Explained Variance: {predictiveRegressionMetrics?.explained_variance != null
+                          Explained Variance:{' '}
+                          {predictiveRegressionMetrics?.explained_variance != null
                             ? predictiveRegressionMetrics.explained_variance.toFixed(3)
                             : 'N/A'}
                         </span>
@@ -995,22 +1142,22 @@ function App() {
                             : 'N/A'}
                         </span>
                         <span className="info-sub">
-                          MAE: {predictiveRegressionMetrics?.mae != null
+                          MAE:{' '}
+                          {predictiveRegressionMetrics?.mae != null
                             ? predictiveRegressionMetrics.mae.toFixed(2)
                             : 'N/A'}
                         </span>
-                        <span className="info-sub">
-                          RMSE in predicted cycles
-                        </span>
+                        <span className="info-sub">RMSE in predicted cycles</span>
                       </div>
                     </div>
 
-                    <div className="summary-box" style={{ marginTop: '18px' }}>
+                    <div className="summary-box">
                       <h4>📌 Interpretation</h4>
-                      <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.6 }}>
-                        The predictive block complements deterministic engineering analytics by estimating short-horizon failure likelihood
-                        and remaining useful life from historical sensor behavior. Use the classification metrics to judge failure-alert
-                        quality and the regression metrics to judge RUL forecast reliability.
+                      <p>
+                        The predictive block complements deterministic engineering analytics by estimating
+                        short-horizon failure likelihood and remaining useful life from historical sensor behavior.
+                        Use the classification metrics to judge failure-alert quality and the regression metrics
+                        to judge RUL forecast reliability.
                       </p>
                     </div>
                   </div>

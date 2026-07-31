@@ -6,9 +6,7 @@ on:
       - main
 
 jobs:
-
   deploy:
-
     runs-on: ubuntu-latest
 
     env:
@@ -19,21 +17,17 @@ jobs:
       EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
 
     steps:
-
       # ----------------------------------------------------
       # Checkout Repository
       # ----------------------------------------------------
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       # ----------------------------------------------------
       # Configure AWS Credentials
       # ----------------------------------------------------
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
-
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -42,7 +36,6 @@ jobs:
       # ----------------------------------------------------
       # Setup Python for Model Training
       # ----------------------------------------------------
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -51,7 +44,6 @@ jobs:
       # ----------------------------------------------------
       # Install Backend Dependencies
       # ----------------------------------------------------
-
       - name: Install Backend Dependencies
         run: |
           python -m pip install --upgrade pip
@@ -60,16 +52,38 @@ jobs:
       # ----------------------------------------------------
       # Train Predictive Maintenance Model
       # ----------------------------------------------------
-
       - name: Train Predictive Maintenance Model
         run: |
           cd backend
           python -m src.aircraft_maintenance.train_model
 
       # ----------------------------------------------------
+      # Setup Node.js for Frontend Validation
+      # ----------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # ----------------------------------------------------
+      # Install Frontend Dependencies
+      # ----------------------------------------------------
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      # ----------------------------------------------------
+      # Build Frontend Application
+      # ----------------------------------------------------
+      - name: Build Frontend Application
+        working-directory: ./frontend
+        run: npm run build
+
+      # ----------------------------------------------------
       # Login to Amazon ECR
       # ----------------------------------------------------
-
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -77,17 +91,15 @@ jobs:
       # ----------------------------------------------------
       # Build Backend Docker Image
       # ----------------------------------------------------
-
       - name: Build Backend Image
         run: |
           docker build \
-          -t airace-backend \
-          ./backend
+            -t airace-backend \
+            ./backend
 
       # ----------------------------------------------------
       # Tag Backend Image
       # ----------------------------------------------------
-
       - name: Tag Backend Image
         run: |
           docker tag airace-backend:latest $BACKEND_IMAGE
@@ -95,7 +107,6 @@ jobs:
       # ----------------------------------------------------
       # Push Backend Image
       # ----------------------------------------------------
-
       - name: Push Backend Image
         run: |
           docker push $BACKEND_IMAGE
@@ -103,17 +114,15 @@ jobs:
       # ----------------------------------------------------
       # Build Frontend Docker Image
       # ----------------------------------------------------
-
       - name: Build Frontend Image
         run: |
           docker build \
-          -t airace-frontend \
-          ./frontend
+            -t airace-frontend \
+            ./frontend
 
       # ----------------------------------------------------
       # Tag Frontend Image
       # ----------------------------------------------------
-
       - name: Tag Frontend Image
         run: |
           docker tag airace-frontend:latest $FRONTEND_IMAGE
@@ -121,7 +130,6 @@ jobs:
       # ----------------------------------------------------
       # Push Frontend Image
       # ----------------------------------------------------
-
       - name: Push Frontend Image
         run: |
           docker push $FRONTEND_IMAGE
@@ -129,17 +137,15 @@ jobs:
       # ----------------------------------------------------
       # Configure kubectl
       # ----------------------------------------------------
-
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
-          --region $AWS_REGION \
-          --name $EKS_CLUSTER_NAME
+            --region $AWS_REGION \
+            --name $EKS_CLUSTER_NAME
 
       # ----------------------------------------------------
       # Replace Backend Image
       # ----------------------------------------------------
-
       - name: Update Backend Manifest
         run: |
           sed -i "s|\${BACKEND_IMAGE}|$BACKEND_IMAGE|g" kubernetes/backend-deployment.yaml
@@ -147,7 +153,6 @@ jobs:
       # ----------------------------------------------------
       # Replace Frontend Image
       # ----------------------------------------------------
-
       - name: Update Frontend Manifest
         run: |
           sed -i "s|\${FRONTEND_IMAGE}|$FRONTEND_IMAGE|g" kubernetes/frontend-deployment.yaml
@@ -155,7 +160,6 @@ jobs:
       # ----------------------------------------------------
       # Create / Update Kubernetes Secret
       # ----------------------------------------------------
-
       - name: Create AWS Credentials Secret
         run: |
           kubectl create secret generic aws-credentials \
@@ -167,7 +171,6 @@ jobs:
       # ----------------------------------------------------
       # Deploy Kubernetes Resources
       # ----------------------------------------------------
-
       - name: Deploy to Amazon EKS
         run: |
           kubectl apply -f kubernetes/
@@ -175,7 +178,6 @@ jobs:
       # ----------------------------------------------------
       # Force Rollout Restart
       # ----------------------------------------------------
-
       - name: Restart Backend Deployment
         run: |
           kubectl rollout restart deployment/airace-backend
@@ -187,7 +189,6 @@ jobs:
       # ----------------------------------------------------
       # Verify Deployment
       # ----------------------------------------------------
-
       - name: Wait for Backend
         run: |
           kubectl rollout status deployment/airace-backend --timeout=180s
@@ -209,7 +210,6 @@ jobs:
       # ----------------------------------------------------
       # Verify Pods
       # ----------------------------------------------------
-
       - name: List Resources
         run: |
           kubectl get deployments
