@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ✈️ Airace Maintenance Command
 
 <p align="center">
@@ -151,3 +152,6 @@ AI-assisted maintenance reasoning with grounding, threshold violations, and deci
                     ┌──────────────────────────┐
                     │ Dashboard + Decision UI  │
                     └──────────────────────────┘
+=======
+
+>>>>>>> 9e406dc6888f304b36c66046dc0e5449b025d6ed
