@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://af01e0b65ac264ea0ba867cb7117e156-1200357037.eu-north-1.elb.amazonaws.com'.replace(/\/$/, '');
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+).replace(/\/$/, '');
 
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
