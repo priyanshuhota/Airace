@@ -76,7 +76,11 @@ class MaintenancePrediction:
     flight_cycle: int
     failure_probability_next_n_flights: float
     predicted_failure_label: int
+    predicted_rul_raw: float
     predicted_rul: float
+    recorded_rul_from_dataset: float | None
+    rul_difference: float | None
+    prediction_consistency_warning: bool
     engine_health_score: float
     risk_band: str
     top_feature_snapshot: dict[str, Any] = field(default_factory=dict)
@@ -88,7 +92,11 @@ class MaintenancePrediction:
             "flight_cycle": self.flight_cycle,
             "failure_probability_next_n_flights": self.failure_probability_next_n_flights,
             "predicted_failure_label": self.predicted_failure_label,
+            "predicted_rul_raw": self.predicted_rul_raw,
             "predicted_rul": self.predicted_rul,
+            "recorded_rul_from_dataset": self.recorded_rul_from_dataset,
+            "rul_difference": self.rul_difference,
+            "prediction_consistency_warning": self.prediction_consistency_warning,
             "engine_health_score": self.engine_health_score,
             "risk_band": self.risk_band,
             "top_feature_snapshot": self.top_feature_snapshot,
@@ -140,7 +148,8 @@ class PredictiveMaintenanceModel:
     ) -> MaintenancePrediction:
         self._require_artifacts()
 
-        engineered = self._prepare_inference_features(data)
+        cleaned = data.copy()
+        engineered = self._prepare_inference_features(cleaned)
         available_aircraft = sorted(engineered["Aircraft_ID"].astype(str).unique().tolist())
         if not available_aircraft:
             raise ValueError("No aircraft data found for predictive inference.")
@@ -170,8 +179,20 @@ class PredictiveMaintenanceModel:
         )
         predicted_label = int(failure_probability >= 0.5)
 
-        predicted_rul = float(self.regression_model.predict(X_latest)[0])
-        predicted_rul = max(0.0, round(predicted_rul, 2))
+        predicted_rul_raw = float(self.regression_model.predict(X_latest)[0])
+        predicted_rul = max(0.0, round(predicted_rul_raw, 2))
+
+        recorded_rul: float | None = None
+        if "Remaining_Useful_Life" in latest.index and pd.notna(latest["Remaining_Useful_Life"]):
+            recorded_rul = round(float(latest["Remaining_Useful_Life"]), 2)
+
+        rul_difference: float | None = None
+        if recorded_rul is not None:
+            rul_difference = round(predicted_rul - recorded_rul, 2)
+
+        consistency_warning = False
+        if rul_difference is not None and abs(rul_difference) >= 15:
+            consistency_warning = True
 
         engine_health_score = round((1.0 - failure_probability) * 100.0, 2)
         risk_band = self._risk_band(failure_probability)
@@ -181,7 +202,11 @@ class PredictiveMaintenanceModel:
             flight_cycle=int(latest["Flight_Cycle"]),
             failure_probability_next_n_flights=round(failure_probability, 4),
             predicted_failure_label=predicted_label,
+            predicted_rul_raw=round(predicted_rul_raw, 2),
             predicted_rul=predicted_rul,
+            recorded_rul_from_dataset=recorded_rul,
+            rul_difference=rul_difference,
+            prediction_consistency_warning=consistency_warning,
             engine_health_score=engine_health_score,
             risk_band=risk_band,
             top_feature_snapshot=self._build_feature_snapshot(latest),
@@ -189,6 +214,7 @@ class PredictiveMaintenanceModel:
                 "failure_horizon": self.metadata.get("failure_horizon"),
                 "model_type_classifier": self.metadata.get("model_type_classifier"),
                 "model_type_regressor": self.metadata.get("model_type_regressor"),
+                "rul_target_source": self.metadata.get("rul_target_source"),
             },
         )
 
@@ -216,7 +242,7 @@ class PredictiveMaintenanceModel:
         data = data.dropna(subset=["Aircraft_ID", "Flight_Cycle"])
         data["Flight_Cycle"] = data["Flight_Cycle"].astype(int)
 
-        for column in RAW_FEATURE_COLUMNS:
+        for column in RAW_FEATURE_COLUMNS + ["Remaining_Useful_Life"]:
             if column in data.columns:
                 data[column] = pd.to_numeric(data[column], errors="coerce")
 
@@ -376,6 +402,7 @@ class PredictiveMaintenanceModel:
             "Wind_Speed",
             "Altitude",
             "Humidity",
+            "Remaining_Useful_Life",
         ]
 
         snapshot: dict[str, Any] = {}

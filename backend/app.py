@@ -43,11 +43,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Load long-lived application resources once at startup.
-
-    FastAPI recommends initializing startup/shutdown resources with lifespan. [fastapi.tiangolo.com](https://fastapi.tiangolo.com/advanced/events/?utm_source=openai)
-    """
     model_dir = os.getenv("MODEL_DIR", "./models")
     predictor = PredictiveMaintenanceModel(model_dir=model_dir)
 
@@ -64,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Aircraft Maintenance API",
-    version="1.1.0",
+    version="1.2.0",
     description="API for aircraft engineering analytics, predictive maintenance, and maintenance reporting",
     lifespan=lifespan,
 )

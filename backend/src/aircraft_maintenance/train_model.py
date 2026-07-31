@@ -9,6 +9,11 @@ This script:
 5. Evaluates them
 6. Saves model artifacts for production inference
 
+Design choice for RUL:
+- If the dataset already contains a numeric Remaining_Useful_Life column,
+  use it directly as the regression target.
+- Otherwise, fall back to a derived RUL target from future failure events.
+
 Run example:
     python -m src.aircraft_maintenance.train_model
 """
@@ -141,7 +146,7 @@ class PredictiveMaintenanceTrainer:
         data = data.dropna(subset=["Aircraft_ID", "Flight_Cycle"])
         data["Flight_Cycle"] = data["Flight_Cycle"].astype(int)
 
-        for column in RAW_FEATURE_COLUMNS:
+        for column in RAW_FEATURE_COLUMNS + ["Remaining_Useful_Life"]:
             if column in data.columns:
                 data[column] = pd.to_numeric(data[column], errors="coerce")
 
@@ -190,29 +195,63 @@ class PredictiveMaintenanceTrainer:
 
         data["Aircraft_Age_In_Cycles"] = grouped.cumcount() + 1
 
-        self._safe_create_ratio(data, "Engine_Exhaust_Gas_Temperature", "Fuel_Flow", "EGT_to_FuelFlow")
-        self._safe_create_ratio(data, "Oil_Pressure", "Engine_RPM", "OilPressure_to_RPM")
-        self._safe_create_product(data, "Turbine_Vibration", "Engine_RPM", "Vibration_x_RPM")
-        self._safe_create_ratio(data, "Brake_Temperature", "Landing_Speed", "BrakeTemp_to_LandingSpeed")
+        self._safe_create_ratio(
+            data,
+            "Engine_Exhaust_Gas_Temperature",
+            "Fuel_Flow",
+            "EGT_to_FuelFlow",
+        )
+        self._safe_create_ratio(
+            data,
+            "Oil_Pressure",
+            "Engine_RPM",
+            "OilPressure_to_RPM",
+        )
+        self._safe_create_product(
+            data,
+            "Turbine_Vibration",
+            "Engine_RPM",
+            "Vibration_x_RPM",
+        )
+        self._safe_create_ratio(
+            data,
+            "Brake_Temperature",
+            "Landing_Speed",
+            "BrakeTemp_to_LandingSpeed",
+        )
 
         data["Failure_Event"] = self._derive_failure_event(data)
+
         data["Failure_Within_Horizon"] = (
             grouped["Failure_Event"]
             .transform(lambda s: self._future_failure_within_horizon(s, self.failure_horizon))
             .astype(int)
         )
-        data["RUL_Target"] = grouped["Failure_Event"].transform(self._compute_rul)
 
-        feature_columns = self._get_feature_columns(data)
-        data = data.dropna(subset=["RUL_Target"], how="all").copy()
-        rows_with_any_signal = data[feature_columns].notna().sum(axis=1) > 0
-        data = data[rows_with_any_signal].reset_index(drop=True)
+        data["RUL_Target_Derived"] = grouped["Failure_Event"].transform(self._compute_rul)
 
-        logger.info("Failure_Event distribution: %s", data["Failure_Event"].value_counts(dropna=False).to_dict())
+        if "Remaining_Useful_Life" in data.columns and data["Remaining_Useful_Life"].notna().sum() > 0:
+            data["RUL_Target"] = pd.to_numeric(data["Remaining_Useful_Life"], errors="coerce")
+            rul_source = "dataset_remaining_useful_life"
+        else:
+            data["RUL_Target"] = data["RUL_Target_Derived"]
+            rul_source = "derived_from_future_failure_event"
+
+        logger.info(
+            "Failure_Event distribution: %s",
+            data["Failure_Event"].value_counts(dropna=False).to_dict(),
+        )
         logger.info(
             "Failure_Within_Horizon distribution: %s",
             data["Failure_Within_Horizon"].value_counts(dropna=False).to_dict(),
         )
+        logger.info("RUL target source selected: %s", rul_source)
+
+        feature_columns = self._get_feature_columns(data)
+        data = data.dropna(subset=["RUL_Target"], how="all").copy()
+
+        rows_with_any_signal = data[feature_columns].notna().sum(axis=1) > 0
+        data = data[rows_with_any_signal].reset_index(drop=True)
 
         self.model_data = data
         return self.model_data
@@ -304,6 +343,10 @@ class PredictiveMaintenanceTrainer:
             "model_type_classifier": type(classification_model.named_steps["model"]).__name__,
             "model_type_regressor": type(regression_model.named_steps["model"]).__name__,
             "training_dataset": str(self.excel_path),
+            "rul_target_source": "dataset_remaining_useful_life"
+            if "Remaining_Useful_Life" in self._require_data().columns
+            and self._require_data()["Remaining_Useful_Life"].notna().sum() > 0
+            else "derived_from_future_failure_event",
         }
 
         metrics = {
@@ -478,6 +521,7 @@ class PredictiveMaintenanceTrainer:
             "Flight_Cycle",
             "Failure_Event",
             "Failure_Within_Horizon",
+            "RUL_Target_Derived",
             "RUL_Target",
             "Detected_Failure_Mode",
             "Recommended_Maintenance_Action",
@@ -498,7 +542,7 @@ class PredictiveMaintenanceTrainer:
     def _build_classifier(self, y_train_clf: pd.Series) -> Pipeline:
         if XGBOOST_AVAILABLE and y_train_clf.nunique() >= 2:
             model = XGBClassifier(
-                n_estimators=250,
+                n_estimators=300,
                 max_depth=6,
                 learning_rate=0.05,
                 subsample=0.9,
@@ -508,7 +552,7 @@ class PredictiveMaintenanceTrainer:
             )
         else:
             model = RandomForestClassifier(
-                n_estimators=250,
+                n_estimators=300,
                 max_depth=10,
                 random_state=42,
                 n_jobs=-1,
@@ -525,7 +569,7 @@ class PredictiveMaintenanceTrainer:
     def _build_regressor(self) -> Pipeline:
         if XGBOOST_AVAILABLE:
             model = XGBRegressor(
-                n_estimators=250,
+                n_estimators=300,
                 max_depth=6,
                 learning_rate=0.05,
                 subsample=0.9,
@@ -534,7 +578,7 @@ class PredictiveMaintenanceTrainer:
             )
         else:
             model = RandomForestRegressor(
-                n_estimators=250,
+                n_estimators=300,
                 max_depth=10,
                 random_state=42,
                 n_jobs=-1,
