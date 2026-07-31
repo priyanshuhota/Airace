@@ -10,7 +10,11 @@ export default function PanelCard({
     <section className={`panel-card panel-${accent}`}>
       <div className="panel-head">
         <div className="panel-head-main">
-          {icon ? <div className="panel-icon" aria-hidden="true">{icon}</div> : null}
+          {icon ? (
+            <div className="panel-icon" aria-hidden="true">
+              {icon}
+            </div>
+          ) : null}
 
           <div>
             <h3>{title}</h3>
