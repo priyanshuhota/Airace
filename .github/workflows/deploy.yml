@@ -173,6 +173,18 @@ jobs:
           kubectl apply -f kubernetes/
 
       # ----------------------------------------------------
+      # Force Rollout Restart
+      # ----------------------------------------------------
+
+      - name: Restart Backend Deployment
+        run: |
+          kubectl rollout restart deployment/airace-backend
+
+      - name: Restart Frontend Deployment
+        run: |
+          kubectl rollout restart deployment/airace-frontend
+
+      # ----------------------------------------------------
       # Verify Deployment
       # ----------------------------------------------------
 
