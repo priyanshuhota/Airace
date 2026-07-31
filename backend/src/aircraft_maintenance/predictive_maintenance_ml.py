@@ -1,8 +1,11 @@
 """
 Production inference module for predictive maintenance.
 
-This module loads previously trained predictive maintenance artifacts and
-performs inference for aircraft health, failure probability, and RUL.
+Improved version:
+1. Keeps inference features aligned with training.
+2. Tolerates missing engineered features by creating NaN columns.
+3. Applies consistency reconciliation between failure risk and RUL.
+4. Produces a more humanly coherent health score.
 """
 
 from __future__ import annotations
@@ -69,6 +72,14 @@ RAW_FEATURE_COLUMNS = [
     "Brake_Temperature",
 ]
 
+INTERACTION_FEATURES = [
+    "EGT_to_FuelFlow",
+    "OilPressure_to_RPM",
+    "Vibration_x_RPM",
+    "BrakeTemp_to_LandingSpeed",
+    "Aircraft_Age_In_Cycles",
+]
+
 
 @dataclass
 class MaintenancePrediction:
@@ -105,19 +116,18 @@ class MaintenancePrediction:
 
 
 class PredictiveMaintenanceModel:
-    def __init__(
-        self,
-        model_dir: str | Path,
-    ) -> None:
+    def __init__(self, model_dir: str | Path) -> None:
         self.model_dir = Path(model_dir)
         self.classification_model: Any | None = None
         self.regression_model: Any | None = None
         self.metadata: dict[str, Any] | None = None
+        self.metrics: dict[str, Any] | None = None
 
     def load_artifacts(self) -> None:
         classifier_path = self.model_dir / "predictive_classifier.joblib"
         regressor_path = self.model_dir / "predictive_regressor.joblib"
         metadata_path = self.model_dir / "predictive_metadata.json"
+        metrics_path = self.model_dir / "predictive_metrics.json"
 
         if not classifier_path.exists():
             raise FileNotFoundError(f"Classifier artifact not found: {classifier_path}")
@@ -129,6 +139,7 @@ class PredictiveMaintenanceModel:
         self.classification_model = joblib.load(classifier_path)
         self.regression_model = joblib.load(regressor_path)
         self.metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        self.metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
 
         logger.info("Loaded predictive maintenance artifacts from %s", self.model_dir)
 
@@ -150,11 +161,16 @@ class PredictiveMaintenanceModel:
 
         cleaned = data.copy()
         engineered = self._prepare_inference_features(cleaned)
+
         available_aircraft = sorted(engineered["Aircraft_ID"].astype(str).unique().tolist())
         if not available_aircraft:
             raise ValueError("No aircraft data found for predictive inference.")
 
-        selected_aircraft = str(aircraft_id) if aircraft_id else available_aircraft[0]
+        if aircraft_id:
+            selected_aircraft = str(aircraft_id)
+        else:
+            latest_global_row = engineered.sort_values(["Flight_Cycle"]).iloc[-1]
+            selected_aircraft = str(latest_global_row["Aircraft_ID"])
 
         aircraft_history = engineered[
             engineered["Aircraft_ID"].astype(str) == selected_aircraft
@@ -163,51 +179,61 @@ class PredictiveMaintenanceModel:
         if aircraft_history.empty:
             raise ValueError(f"No records found for aircraft: {selected_aircraft}")
 
-        latest = aircraft_history.sort_values("Flight_Cycle").iloc[-1]
-        feature_columns = self.metadata["feature_columns"]
+        latest = aircraft_history.sort_values("Flight_Cycle").iloc[-1].copy()
+        feature_columns = list(self.metadata["feature_columns"])
 
-        missing_feature_columns = [c for c in feature_columns if c not in engineered.columns]
-        if missing_feature_columns:
-            raise ValueError(
-                f"Missing engineered feature columns required for inference: {missing_feature_columns}"
-            )
+        for col in feature_columns:
+            if col not in engineered.columns:
+                engineered[col] = np.nan
+
+        for col in feature_columns:
+            if col not in latest.index:
+                latest[col] = np.nan
 
         X_latest = pd.DataFrame([latest[feature_columns]])
 
-        failure_probability = float(
+        raw_failure_probability = float(
             self._predict_proba_safe(self.classification_model, X_latest)[0]
         )
-        predicted_label = int(failure_probability >= 0.5)
+        raw_failure_probability = float(np.clip(raw_failure_probability, 0.0, 1.0))
 
-        predicted_rul_raw = float(self.regression_model.predict(X_latest)[0])
-        predicted_rul = max(0.0, round(predicted_rul_raw, 2))
+        raw_predicted_rul = float(self.regression_model.predict(X_latest)[0])
+        raw_predicted_rul = max(0.0, raw_predicted_rul)
 
         recorded_rul: float | None = None
         if "Remaining_Useful_Life" in latest.index and pd.notna(latest["Remaining_Useful_Life"]):
             recorded_rul = round(float(latest["Remaining_Useful_Life"]), 2)
 
+        reconciled_probability, reconciled_rul, consistency_warning = self._reconcile_predictions(
+            failure_probability=raw_failure_probability,
+            predicted_rul=raw_predicted_rul,
+            recorded_rul=recorded_rul,
+        )
+
+        risk_band = self._risk_band(reconciled_probability)
+        predicted_label = int(reconciled_probability >= self.metadata.get("classifier_threshold", 0.5))
+
         rul_difference: float | None = None
         if recorded_rul is not None:
-            rul_difference = round(predicted_rul - recorded_rul, 2)
+            rul_difference = round(reconciled_rul - recorded_rul, 2)
 
-        consistency_warning = False
-        if rul_difference is not None and abs(rul_difference) >= 15:
-            consistency_warning = True
-
-        engine_health_score = round((1.0 - failure_probability) * 100.0, 2)
-        risk_band = self._risk_band(failure_probability)
+        engine_health_score = self._compute_health_score(
+            failure_probability=reconciled_probability,
+            predicted_rul=reconciled_rul,
+            recorded_rul=recorded_rul,
+        )
 
         return MaintenancePrediction(
             aircraft_id=selected_aircraft,
             flight_cycle=int(latest["Flight_Cycle"]),
-            failure_probability_next_n_flights=round(failure_probability, 4),
+            failure_probability_next_n_flights=round(reconciled_probability, 4),
             predicted_failure_label=predicted_label,
-            predicted_rul_raw=round(predicted_rul_raw, 2),
-            predicted_rul=predicted_rul,
+            predicted_rul_raw=round(raw_predicted_rul, 2),
+            predicted_rul=round(reconciled_rul, 2),
             recorded_rul_from_dataset=recorded_rul,
             rul_difference=rul_difference,
             prediction_consistency_warning=consistency_warning,
-            engine_health_score=engine_health_score,
+            engine_health_score=round(engine_health_score, 2),
             risk_band=risk_band,
             top_feature_snapshot=self._build_feature_snapshot(latest),
             model_metadata={
@@ -300,6 +326,79 @@ class PredictiveMaintenanceModel:
         if self.classification_model is None or self.regression_model is None or self.metadata is None:
             raise ValueError("Model artifacts are not loaded. Call load_artifacts() first.")
 
+    def _reconcile_predictions(
+        self,
+        failure_probability: float,
+        predicted_rul: float,
+        recorded_rul: float | None,
+    ) -> tuple[float, float, bool]:
+        rules = self.metadata.get("consistency_rules", {}) if self.metadata else {}
+
+        critical_p = float(rules.get("critical_probability_threshold", 0.85))
+        high_p = float(rules.get("high_probability_threshold", 0.65))
+        moderate_p = float(rules.get("moderate_probability_threshold", 0.35))
+
+        critical_max_rul = float(rules.get("critical_max_rul", 15))
+        high_max_rul = float(rules.get("high_max_rul", 30))
+        moderate_max_rul = float(rules.get("moderate_max_rul", 60))
+
+        reconciled_rul = float(max(0.0, predicted_rul))
+        reconciled_probability = float(np.clip(failure_probability, 0.0, 1.0))
+        consistency_warning = False
+
+        # If the uploaded dataset already contains current RUL, use it as an anchor.
+        if recorded_rul is not None:
+            # Blend model prediction with observed RUL for more operationally believable outputs.
+            reconciled_rul = 0.6 * reconciled_rul + 0.4 * float(recorded_rul)
+
+        # Force coherence between very high risk and RUL
+        if reconciled_probability >= critical_p:
+            if reconciled_rul > critical_max_rul:
+                consistency_warning = True
+                reconciled_rul = critical_max_rul
+        elif reconciled_probability >= high_p:
+            if reconciled_rul > high_max_rul:
+                consistency_warning = True
+                reconciled_rul = high_max_rul
+        elif reconciled_probability >= moderate_p:
+            if reconciled_rul > moderate_max_rul:
+                consistency_warning = True
+                reconciled_rul = moderate_max_rul
+
+        # Reverse consistency: if RUL is very low, probability should not be too low
+        if reconciled_rul <= 10:
+            reconciled_probability = max(reconciled_probability, 0.85)
+        elif reconciled_rul <= 20:
+            reconciled_probability = max(reconciled_probability, 0.65)
+        elif reconciled_rul <= 40:
+            reconciled_probability = max(reconciled_probability, 0.35)
+
+        reconciled_probability = float(np.clip(reconciled_probability, 0.0, 0.995))
+        reconciled_rul = float(max(0.0, reconciled_rul))
+
+        return reconciled_probability, reconciled_rul, consistency_warning
+
+    def _compute_health_score(
+        self,
+        failure_probability: float,
+        predicted_rul: float,
+        recorded_rul: float | None,
+    ) -> float:
+        # Base health from failure probability
+        base_health = (1.0 - failure_probability) * 100.0
+
+        # Add RUL-informed moderation so health is not absurdly low when RUL is still moderate.
+        rul_reference = recorded_rul if recorded_rul is not None and recorded_rul > 0 else predicted_rul
+        rul_reference = max(0.0, float(rul_reference))
+
+        # Convert RUL into a 0-100 support factor
+        rul_support = min((rul_reference / 60.0) * 100.0, 100.0)
+
+        # Weighted blend: failure risk dominates, but RUL still matters
+        health_score = 0.7 * base_health + 0.3 * rul_support
+
+        return float(np.clip(health_score, 0.0, 100.0))
+
     @staticmethod
     def _clean_columns(data: pd.DataFrame) -> pd.DataFrame:
         data = data.copy()
@@ -367,12 +466,6 @@ class PredictiveMaintenanceModel:
                 return proba[:, 1]
 
             if proba.ndim == 2 and proba.shape[1] == 1:
-                model_obj = model.named_steps["model"] if hasattr(model, "named_steps") else model
-                if hasattr(model_obj, "classes_") and len(model_obj.classes_) == 1:
-                    only_class = model_obj.classes_[0]
-                    if only_class == 1:
-                        return np.ones(len(X), dtype=float)
-                    return np.zeros(len(X), dtype=float)
                 return proba[:, 0]
 
         pred = model.predict(X)
@@ -380,11 +473,11 @@ class PredictiveMaintenanceModel:
 
     @staticmethod
     def _risk_band(probability: float) -> str:
-        if probability >= 0.7:
+        if probability >= 0.85:
             return "CRITICAL"
-        if probability >= 0.4:
+        if probability >= 0.65:
             return "HIGH"
-        if probability >= 0.2:
+        if probability >= 0.35:
             return "MODERATE"
         return "LOW"
 

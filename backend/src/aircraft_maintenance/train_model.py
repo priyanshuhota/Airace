@@ -1,20 +1,14 @@
 """
 Offline training script for predictive maintenance models.
 
-This script:
-1. Loads the aircraft maintenance dataset
-2. Engineers features
-3. Creates labels
-4. Trains classification and regression models
-5. Evaluates them
-6. Saves model artifacts for production inference
+Improved version:
+1. Uses a stricter, controlled feature set to reduce leakage/mismatch.
+2. Handles imbalance more explicitly.
+3. Calibrates classification probabilities.
+4. Saves training statistics used later for consistency logic in inference.
+5. Keeps feature engineering aligned with inference.
 
-Design choice for RUL:
-- If the dataset already contains a numeric Remaining_Useful_Life column,
-  use it directly as the regression target.
-- Otherwise, fall back to a derived RUL target from future failure events.
-
-Run example:
+Run:
     python -m src.aircraft_maintenance.train_model
 """
 
@@ -32,6 +26,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
@@ -108,6 +103,14 @@ RAW_FEATURE_COLUMNS = [
     "Brake_Temperature",
 ]
 
+INTERACTION_FEATURES = [
+    "EGT_to_FuelFlow",
+    "OilPressure_to_RPM",
+    "Vibration_x_RPM",
+    "BrakeTemp_to_LandingSpeed",
+    "Aircraft_Age_In_Cycles",
+]
+
 
 @dataclass
 class TrainingBundle:
@@ -155,12 +158,11 @@ class PredictiveMaintenanceTrainer:
 
     def prepare_training_data(self) -> pd.DataFrame:
         data = self._require_data().copy()
-        available_raw_features = [c for c in RAW_FEATURE_COLUMNS if c in data.columns]
+        grouped = data.groupby("Aircraft_ID", group_keys=False)
 
+        available_raw_features = [c for c in RAW_FEATURE_COLUMNS if c in data.columns]
         if not available_raw_features:
             raise ValueError("None of the expected raw feature columns were found.")
-
-        grouped = data.groupby("Aircraft_ID", group_keys=False)
 
         for col in available_raw_features:
             data[f"{col}_lag_1"] = grouped[col].shift(1)
@@ -195,30 +197,10 @@ class PredictiveMaintenanceTrainer:
 
         data["Aircraft_Age_In_Cycles"] = grouped.cumcount() + 1
 
-        self._safe_create_ratio(
-            data,
-            "Engine_Exhaust_Gas_Temperature",
-            "Fuel_Flow",
-            "EGT_to_FuelFlow",
-        )
-        self._safe_create_ratio(
-            data,
-            "Oil_Pressure",
-            "Engine_RPM",
-            "OilPressure_to_RPM",
-        )
-        self._safe_create_product(
-            data,
-            "Turbine_Vibration",
-            "Engine_RPM",
-            "Vibration_x_RPM",
-        )
-        self._safe_create_ratio(
-            data,
-            "Brake_Temperature",
-            "Landing_Speed",
-            "BrakeTemp_to_LandingSpeed",
-        )
+        self._safe_create_ratio(data, "Engine_Exhaust_Gas_Temperature", "Fuel_Flow", "EGT_to_FuelFlow")
+        self._safe_create_ratio(data, "Oil_Pressure", "Engine_RPM", "OilPressure_to_RPM")
+        self._safe_create_product(data, "Turbine_Vibration", "Engine_RPM", "Vibration_x_RPM")
+        self._safe_create_ratio(data, "Brake_Temperature", "Landing_Speed", "BrakeTemp_to_LandingSpeed")
 
         data["Failure_Event"] = self._derive_failure_event(data)
 
@@ -237,28 +219,32 @@ class PredictiveMaintenanceTrainer:
             data["RUL_Target"] = data["RUL_Target_Derived"]
             rul_source = "derived_from_future_failure_event"
 
-        logger.info(
-            "Failure_Event distribution: %s",
-            data["Failure_Event"].value_counts(dropna=False).to_dict(),
-        )
+        # Clamp impossible/negative RUL values
+        data["RUL_Target"] = pd.to_numeric(data["RUL_Target"], errors="coerce")
+        data.loc[data["RUL_Target"] < 0, "RUL_Target"] = np.nan
+
+        feature_columns = self._get_feature_columns(data, available_raw_features)
+
+        data = data.dropna(subset=["RUL_Target"], how="all").copy()
+        rows_with_any_signal = data[feature_columns].notna().sum(axis=1) > 0
+        data = data[rows_with_any_signal].reset_index(drop=True)
+
+        logger.info("Failure_Event distribution: %s", data["Failure_Event"].value_counts(dropna=False).to_dict())
         logger.info(
             "Failure_Within_Horizon distribution: %s",
             data["Failure_Within_Horizon"].value_counts(dropna=False).to_dict(),
         )
         logger.info("RUL target source selected: %s", rul_source)
-
-        feature_columns = self._get_feature_columns(data)
-        data = data.dropna(subset=["RUL_Target"], how="all").copy()
-
-        rows_with_any_signal = data[feature_columns].notna().sum(axis=1) > 0
-        data = data[rows_with_any_signal].reset_index(drop=True)
+        logger.info("Training with %d features", len(feature_columns))
 
         self.model_data = data
         return self.model_data
 
     def train_and_save(self) -> TrainingBundle:
         data = self._require_model_data().copy()
-        feature_columns = self._get_feature_columns(data)
+
+        available_raw_features = [c for c in RAW_FEATURE_COLUMNS if c in data.columns]
+        feature_columns = self._get_feature_columns(data, available_raw_features)
 
         clf_data = data.dropna(subset=["Failure_Within_Horizon"]).copy()
         reg_data = data.dropna(subset=["RUL_Target"]).copy()
@@ -272,14 +258,14 @@ class PredictiveMaintenanceTrainer:
         reg_train, reg_test = self._time_based_split(reg_data)
 
         X_train_clf = clf_train[feature_columns]
-        y_train_clf = clf_train["Failure_Within_Horizon"]
+        y_train_clf = clf_train["Failure_Within_Horizon"].astype(int)
         X_test_clf = clf_test[feature_columns]
-        y_test_clf = clf_test["Failure_Within_Horizon"]
+        y_test_clf = clf_test["Failure_Within_Horizon"].astype(int)
 
         X_train_reg = reg_train[feature_columns]
-        y_train_reg = reg_train["RUL_Target"]
+        y_train_reg = reg_train["RUL_Target"].astype(float)
         X_test_reg = reg_test[feature_columns]
-        y_test_reg = reg_test["RUL_Target"]
+        y_test_reg = reg_test["RUL_Target"].astype(float)
 
         logger.info("Classification train class distribution: %s", y_train_clf.value_counts().to_dict())
         logger.info("Classification test class distribution: %s", y_test_clf.value_counts().to_dict())
@@ -294,6 +280,7 @@ class PredictiveMaintenanceTrainer:
         clf_pred = (clf_prob >= 0.5).astype(int)
 
         reg_pred = regression_model.predict(X_test_reg)
+        reg_pred = np.maximum(reg_pred, 0.0)
         mse_value = float(mean_squared_error(y_test_reg, reg_pred))
 
         classification_metrics = {
@@ -304,6 +291,8 @@ class PredictiveMaintenanceTrainer:
             "recall": float(recall_score(y_test_clf, clf_pred, zero_division=0)),
             "f1_score": float(f1_score(y_test_clf, clf_pred, zero_division=0)),
             "roc_auc": self._safe_roc_auc(y_test_clf, clf_prob),
+            "positive_rate_train": float(y_train_clf.mean()),
+            "positive_rate_test": float(y_test_clf.mean()),
             "train_class_distribution": y_train_clf.value_counts().to_dict(),
             "test_class_distribution": y_test_clf.value_counts().to_dict(),
             "classification_report": classification_report(
@@ -321,6 +310,9 @@ class PredictiveMaintenanceTrainer:
             "r2_score": float(r2_score(y_test_reg, reg_pred)) if len(y_test_reg) > 1 else None,
             "explained_variance": float(explained_variance_score(y_test_reg, reg_pred))
             if len(y_test_reg) > 1 else None,
+            "rul_train_median": float(np.nanmedian(y_train_reg)),
+            "rul_train_p25": float(np.nanpercentile(y_train_reg, 25)),
+            "rul_train_p75": float(np.nanpercentile(y_train_reg, 75)),
             "test_size": int(len(reg_test)),
             "train_size": int(len(reg_train)),
         }
@@ -339,14 +331,24 @@ class PredictiveMaintenanceTrainer:
             "feature_columns": feature_columns,
             "failure_horizon": self.failure_horizon,
             "sheet_name": self.sheet_name,
-            "raw_feature_columns": RAW_FEATURE_COLUMNS,
-            "model_type_classifier": type(classification_model.named_steps["model"]).__name__,
+            "raw_feature_columns": available_raw_features,
+            "interaction_features": INTERACTION_FEATURES,
+            "model_type_classifier": type(classification_model).__name__,
             "model_type_regressor": type(regression_model.named_steps["model"]).__name__,
             "training_dataset": str(self.excel_path),
             "rul_target_source": "dataset_remaining_useful_life"
             if "Remaining_Useful_Life" in self._require_data().columns
             and self._require_data()["Remaining_Useful_Life"].notna().sum() > 0
             else "derived_from_future_failure_event",
+            "classifier_threshold": 0.5,
+            "consistency_rules": {
+                "critical_probability_threshold": 0.85,
+                "high_probability_threshold": 0.65,
+                "moderate_probability_threshold": 0.35,
+                "critical_max_rul": 15,
+                "high_max_rul": 30,
+                "moderate_max_rul": 60,
+            },
         }
 
         metrics = {
@@ -468,7 +470,7 @@ class PredictiveMaintenanceTrainer:
 
         for i in range(len(values)):
             future_end = min(len(values), i + horizon + 1)
-            if values[i + 1 : future_end].sum() > 0:
+            if values[i + 1:future_end].sum() > 0:
                 result[i] = 1
 
         return pd.Series(result, index=series.index)
@@ -515,71 +517,108 @@ class PredictiveMaintenanceTrainer:
         return train_df, test_df
 
     @staticmethod
-    def _get_feature_columns(data: pd.DataFrame) -> list[str]:
-        exclude = {
-            "Aircraft_ID",
-            "Flight_Cycle",
-            "Failure_Event",
-            "Failure_Within_Horizon",
-            "RUL_Target_Derived",
-            "RUL_Target",
-            "Detected_Failure_Mode",
-            "Recommended_Maintenance_Action",
-            "Maintenance_Status",
-        }
+    def _get_feature_columns(data: pd.DataFrame, available_raw_features: list[str]) -> list[str]:
+        feature_columns: list[str] = []
+
+        for col in available_raw_features:
+            feature_columns.append(col)
+            for suffix in [
+                "lag_1",
+                "lag_2",
+                "lag_3",
+                "delta_1",
+                "delta_2",
+                "roll_mean_3",
+                "roll_std_3",
+                "roll_mean_5",
+                "roll_std_5",
+                "zscore_5",
+                "slope_5",
+            ]:
+                candidate = f"{col}_{suffix}"
+                if candidate in data.columns:
+                    feature_columns.append(candidate)
+
+        for col in INTERACTION_FEATURES:
+            if col in data.columns:
+                feature_columns.append(col)
 
         feature_columns = [
-            c
-            for c in data.columns
-            if c not in exclude and pd.api.types.is_numeric_dtype(data[c])
+            c for c in feature_columns
+            if c in data.columns and pd.api.types.is_numeric_dtype(data[c])
         ]
+
+        feature_columns = list(dict.fromkeys(feature_columns))
 
         if not feature_columns:
             raise ValueError("No numeric feature columns available for training.")
 
         return feature_columns
 
-    def _build_classifier(self, y_train_clf: pd.Series) -> Pipeline:
+    def _build_classifier(self, y_train_clf: pd.Series) -> Any:
+        positive_count = int((y_train_clf == 1).sum())
+        negative_count = int((y_train_clf == 0).sum())
+        scale_pos_weight = (negative_count / positive_count) if positive_count > 0 else 1.0
+
         if XGBOOST_AVAILABLE and y_train_clf.nunique() >= 2:
-            model = XGBClassifier(
-                n_estimators=300,
-                max_depth=6,
+            base_estimator = XGBClassifier(
+                n_estimators=250,
+                max_depth=4,
                 learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
+                subsample=0.85,
+                colsample_bytree=0.85,
+                min_child_weight=3,
+                reg_alpha=0.2,
+                reg_lambda=1.5,
+                scale_pos_weight=scale_pos_weight,
                 random_state=42,
                 eval_metric="logloss",
             )
         else:
-            model = RandomForestClassifier(
+            base_estimator = RandomForestClassifier(
                 n_estimators=300,
-                max_depth=10,
+                max_depth=8,
+                min_samples_leaf=4,
                 random_state=42,
                 n_jobs=-1,
                 class_weight="balanced" if y_train_clf.nunique() >= 2 else None,
             )
 
-        return Pipeline(
+        pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
-                ("model", model),
+                ("model", base_estimator),
             ]
         )
+
+        if y_train_clf.nunique() >= 2:
+            # Calibrate probabilities so 0.99 / 1.00 outputs are less misleading.
+            return CalibratedClassifierCV(
+                estimator=pipeline,
+                method="sigmoid",
+                cv=3,
+            )
+
+        return pipeline
 
     def _build_regressor(self) -> Pipeline:
         if XGBOOST_AVAILABLE:
             model = XGBRegressor(
-                n_estimators=300,
-                max_depth=6,
+                n_estimators=250,
+                max_depth=4,
                 learning_rate=0.05,
-                subsample=0.9,
-                colsample_bytree=0.9,
+                subsample=0.85,
+                colsample_bytree=0.85,
+                min_child_weight=3,
+                reg_alpha=0.15,
+                reg_lambda=1.5,
                 random_state=42,
             )
         else:
             model = RandomForestRegressor(
-                n_estimators=300,
+                n_estimators=350,
                 max_depth=10,
+                min_samples_leaf=4,
                 random_state=42,
                 n_jobs=-1,
             )
@@ -592,21 +631,14 @@ class PredictiveMaintenanceTrainer:
         )
 
     @staticmethod
-    def _predict_proba_safe(model: Pipeline, X: pd.DataFrame) -> np.ndarray:
-        model_obj = model.named_steps["model"]
-
-        if hasattr(model_obj, "predict_proba"):
+    def _predict_proba_safe(model: Any, X: pd.DataFrame) -> np.ndarray:
+        if hasattr(model, "predict_proba"):
             proba = model.predict_proba(X)
 
             if proba.ndim == 2 and proba.shape[1] == 2:
                 return proba[:, 1]
 
             if proba.ndim == 2 and proba.shape[1] == 1:
-                if hasattr(model_obj, "classes_") and len(model_obj.classes_) == 1:
-                    only_class = model_obj.classes_[0]
-                    if only_class == 1:
-                        return np.ones(len(X), dtype=float)
-                    return np.zeros(len(X), dtype=float)
                 return proba[:, 0]
 
         pred = model.predict(X)
